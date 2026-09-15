@@ -4,6 +4,7 @@ import { dataDirectory, sqlite } from '@/db';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { syncCardToGoogle } from '@/lib/google-calendar';
+import { publicOrigin } from '@/lib/app-path';
 export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
     const result=mutate(data);
     let calendarWarning: string | undefined;
     if(data.action==='updateCard' && typeof data.id==='string') {
-      try { await syncCardToGoogle(data.id, request.nextUrl.origin); }
+      try { await syncCardToGoogle(data.id, publicOrigin(request)); }
       catch (syncError) { console.error(syncError); calendarWarning=syncError instanceof Error ? syncError.message : 'Google Calendar sync failed.'; }
     }
     if(storedFile)await fs.unlink(path.join(dataDirectory,'uploads',storedFile.id)).catch(()=>{});

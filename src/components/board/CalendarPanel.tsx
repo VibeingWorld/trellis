@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type DragEvent, type FormEvent } from "react";
 import type { AppState, Card, TrayItem } from "./api";
 import { Icon } from "./Icon";
 import { appPath } from "@/lib/app-path";
@@ -8,6 +8,7 @@ import { appPath } from "@/lib/app-path";
 type CalendarView = "month" | "week" | "workweek" | "day";
 type Schedule = { dueDate: string | null; scheduledStart: string | null; scheduledEnd: string | null };
 type CalendarPanelProps = { state: AppState; workspaceId: string; trayItems: TrayItem[]; busy: boolean; onSchedule: (cardId: string, schedule: Schedule) => Promise<unknown>; onOpenCard: (cardId: string) => void; onNotice: (message: string) => void };
+type GoogleStatus = { configured: boolean; connected: boolean; redirectUri: string };
 
 function dateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 function addDays(date: Date, amount: number) { return new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount); }
@@ -33,9 +34,63 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
   const [anchor, setAnchor] = useState(today);
   const [view, setView] = useState<CalendarView>("month");
   const [dragTarget, setDragTarget] = useState("");
+  const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [googleBusy, setGoogleBusy] = useState(false);
   const workspaceCards = state.cards.filter((card) => card.workspaceId === workspaceId && !card.archived);
   const scheduled = workspaceCards.filter((card) => card.dueDate || card.scheduledStart);
   const hours = Array.from({ length: 24 }, (_, index) => index);
+
+  const refreshGoogleStatus = useCallback(async () => {
+    const response = await fetch(appPath(`/api/calendar/google/status?workspaceId=${encodeURIComponent(workspaceId)}`), { cache: "no-store" });
+    const result = await response.json() as GoogleStatus & { error?: string };
+    if (!response.ok) throw new Error(result.error || "Could not check Google Calendar.");
+    setGoogleStatus(result);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    let active = true;
+    void refreshGoogleStatus().catch(() => { if (active) setGoogleStatus(null); });
+    return () => { active = false; };
+  }, [refreshGoogleStatus]);
+
+  useEffect(() => {
+    const receiveConnection = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.data?.type !== "cove-google-calendar") return;
+      void refreshGoogleStatus().then(() => onNotice(event.data.result === "connected" ? "Google Calendar connected" : "Google Calendar connection was not completed")).catch((error) => onNotice(error instanceof Error ? error.message : "Could not refresh Google Calendar."));
+    };
+    window.addEventListener("message", receiveConnection);
+    return () => window.removeEventListener("message", receiveConnection);
+  }, [onNotice, refreshGoogleStatus]);
+
+  async function saveGoogleSetup(event: FormEvent) {
+    event.preventDefault(); setGoogleBusy(true);
+    try {
+      const response = await fetch(appPath("/api/calendar/google/settings"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId, clientSecret }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not save Google setup.");
+      setClientSecret(""); await refreshGoogleStatus(); onNotice("Google Calendar setup saved");
+    } catch (error) { onNotice(error instanceof Error ? error.message : "Could not save Google setup."); }
+    finally { setGoogleBusy(false); }
+  }
+
+  function connectGoogle() {
+    const url = appPath(`/api/calendar/google/connect?workspaceId=${encodeURIComponent(workspaceId)}`);
+    const popup = window.open(url, "cove-google-calendar", "popup,width=560,height=720");
+    if (!popup) onNotice("Allow pop-ups for Cove, then try connecting again.");
+  }
+
+  async function disconnectGoogle() {
+    setGoogleBusy(true);
+    try {
+      const response = await fetch(appPath("/api/calendar/google/disconnect"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not disconnect Google Calendar.");
+      await refreshGoogleStatus(); onNotice("Google Calendar disconnected");
+    } catch (error) { onNotice(error instanceof Error ? error.message : "Could not disconnect Google Calendar."); }
+    finally { setGoogleBusy(false); }
+  }
 
   const monthDays = useMemo(() => {
     const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -77,11 +132,21 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
   return <div className="calendar-panel">
     <div className="calendar-intro"><div><strong>Plan work in time.</strong><p>Drag directly from any board column or from your tray.</p></div><span>{scheduled.length} scheduled</span></div>
     <div className="calendar-connect">
-      <div><Icon name="link" size={15} /><span><strong>Use any calendar</strong><small>No OAuth or app setup. Add individual cards to Google, or export the workspace.</small></span></div>
+      <div><Icon name="link" size={15} /><span><strong>{googleStatus?.connected ? "Google Calendar connected" : googleStatus?.configured ? "Connect Google Calendar" : "Set up Google Calendar"}</strong><small>{googleStatus?.connected ? "Scheduled cards sync automatically to your primary Google Calendar." : "Connect this workspace for automatic event syncing, or use the export options below."}</small></span></div>
+      {!googleStatus?.configured && <form className="calendar-google-setup" onSubmit={(event) => void saveGoogleSetup(event)}>
+        <p>Create a Google OAuth web client, add this authorized redirect URI, then paste its credentials here.</p>
+        {googleStatus?.redirectUri && <code>{googleStatus.redirectUri}</code>}
+        <label>Client ID<input type="text" value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="…apps.googleusercontent.com" autoComplete="off" required /></label>
+        <label>Client secret<input type="password" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} autoComplete="new-password" required /></label>
+        <button type="submit" disabled={googleBusy}>{googleBusy ? "Saving…" : "Save Google setup"}</button>
+      </form>}
       <div className="calendar-connect-actions">
+        {googleStatus?.configured && !googleStatus.connected && <button type="button" disabled={googleBusy} onClick={connectGoogle}>Connect Google Calendar</button>}
+        {googleStatus?.connected && <button type="button" disabled={googleBusy} onClick={() => void disconnectGoogle()}>Disconnect Google</button>}
         <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noreferrer">Open Google Calendar <Icon name="external" size={11} /></a>
         <button type="button" onClick={() => void copyFeed()}><Icon name="copy" size={12} />Copy ICS feed</button><a href={feedPath} download>Download .ics</a>
       </div>
+      {googleStatus?.configured && !googleStatus.connected && <small className="calendar-google-redirect">Google redirect URI: <code>{googleStatus.redirectUri}</code></small>}
     </div>
     <div className="calendar-view-switch" role="tablist" aria-label="Calendar view">{([["month","Month"],["week","Week"],["workweek","5 days"],["day","Day"]] as [CalendarView,string][]).map(([id, name]) => <button key={id} role="tab" aria-selected={view === id} className={view === id ? "active" : ""} onClick={() => setView(id)}>{name}</button>)}</div>
     <div className="calendar-nav"><button type="button" className="icon-button" aria-label="Previous period" onClick={() => shift(-1)}>‹</button><h3>{label}</h3><div><button type="button" onClick={() => setAnchor(new Date())}>Today</button><button type="button" className="icon-button" aria-label="Next period" onClick={() => shift(1)}>›</button></div></div>

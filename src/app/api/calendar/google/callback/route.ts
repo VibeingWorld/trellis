@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sqlite } from "@/db";
 import { getGoogleCredentials, googleRedirectUri, saveGoogleConnection, syncCardToGoogle } from "@/lib/google-calendar";
-import { appPath } from "@/lib/app-path";
+import { appPath, publicOrigin } from "@/lib/app-path";
 
 export const runtime = "nodejs";
 
@@ -18,16 +18,17 @@ export async function GET(request: NextRequest) {
   const workspaceId = request.cookies.get("cove_google_workspace")?.value;
   const credentials = getGoogleCredentials();
   if (!code || !state || state !== savedState || !workspaceId || !credentials) return finish("error");
+  const origin = publicOrigin(request);
   try {
     const response = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ code, client_id: credentials.clientId, client_secret: credentials.clientSecret, redirect_uri: googleRedirectUri(request.nextUrl.origin), grant_type: "authorization_code" }),
+      body: new URLSearchParams({ code, client_id: credentials.clientId, client_secret: credentials.clientSecret, redirect_uri: googleRedirectUri(origin), grant_type: "authorization_code" }),
     });
     const result = await response.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
     if (!response.ok || !result.access_token) return finish("error");
     saveGoogleConnection(workspaceId, { access_token: result.access_token, refresh_token: result.refresh_token, expires_in: result.expires_in });
     const cards = sqlite.prepare("SELECT id FROM cards WHERE workspace_id=? AND archived=0 AND (due_date IS NOT NULL OR scheduled_start IS NOT NULL)").all(workspaceId) as { id: string }[];
-    await Promise.allSettled(cards.map((card) => syncCardToGoogle(card.id, request.nextUrl.origin)));
+    await Promise.allSettled(cards.map((card) => syncCardToGoogle(card.id, origin)));
     const redirect = finish("connected");
     const options = { httpOnly: true, sameSite: "lax" as const, secure: request.nextUrl.protocol === "https:", maxAge: 0, path: appPath("/api/calendar/google/callback") };
     redirect.cookies.set("cove_google_state", "", options); redirect.cookies.set("cove_google_workspace", "", options);
