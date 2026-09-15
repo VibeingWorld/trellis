@@ -63,7 +63,7 @@ function getConnection(): Connection {
     retryBusy(() => connection.transaction(() => {
       connection.exec(schemaSql);
       addMissingColumns(connection);
-      seed(connection);
+      if (process.env.SKIP_DEMO_SEED !== '1') seed(connection);
     }).immediate());
     const result = { sqlite: connection, db: drizzle(connection, { schema }) };
     connections.set(databasePath, result);
