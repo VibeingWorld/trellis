@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type DragEvent, type FormEvent } from "react";
-import type { AppState, Card, TrayItem } from "./api";
+import type { AppState, Card } from "./api";
 import { Icon } from "./Icon";
 import { appPath } from "@/lib/app-path";
 
 type CalendarView = "month" | "week" | "workweek" | "day";
 type Schedule = { dueDate: string | null; scheduledStart: string | null; scheduledEnd: string | null };
-type CalendarPanelProps = { state: AppState; workspaceId: string; trayItems: TrayItem[]; busy: boolean; onSchedule: (cardId: string, schedule: Schedule) => Promise<unknown>; onOpenCard: (cardId: string) => void; onNotice: (message: string) => void };
+type CalendarPanelProps = { state: AppState; workspaceId: string; busy: boolean; onSchedule: (cardId: string, schedule: Schedule) => Promise<unknown>; onOpenCard: (cardId: string) => void; onNotice: (message: string) => void };
 type GoogleStatus = { configured: boolean; connected: boolean; redirectUri: string };
 
 function dateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
@@ -29,7 +29,7 @@ function googleEventUrl(card: Card, origin: string) {
   return `https://calendar.google.com/calendar/render?${new URLSearchParams({ action: "TEMPLATE", text: card.title, dates, details: `${card.description || "Cove card"}\n\n${origin}${appPath(`/cards/${card.id}`)}` })}`;
 }
 
-export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule, onOpenCard, onNotice }: CalendarPanelProps) {
+export function CalendarPanel({ state, workspaceId, busy, onSchedule, onOpenCard, onNotice }: CalendarPanelProps) {
   const today = useMemo(() => new Date(), []);
   const [anchor, setAnchor] = useState(today);
   const [view, setView] = useState<CalendarView>("month");
@@ -131,7 +131,7 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
   const label = view === "month" ? anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" }) : timelineDays.length === 1 ? anchor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : `${timelineDays[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${timelineDays.at(-1)!.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
   const feedPath = appPath(`/api/calendar.ics?workspaceId=${encodeURIComponent(workspaceId)}`);
 
-  return <div className="calendar-panel">
+  return <div className={`calendar-panel view-${view}`}>
     <div className="calendar-intro"><div><strong>Plan work in time.</strong><p>Drag directly from any board column or from your tray.</p></div><span>{scheduled.length} scheduled</span></div>
     <div className="calendar-connect">
       <div><Icon name="link" size={15} /><span><strong>{!workspaceExists ? "Create a workspace first" : googleStatus?.connected ? "Google Calendar connected" : googleStatus?.configured ? "Connect Google Calendar" : "Set up Google Calendar"}</strong><small>{!workspaceExists ? "Google Calendar connections belong to a workspace. Create one, then return here to connect it." : googleStatus?.connected ? "Scheduled cards sync automatically to your primary Google Calendar." : "Connect this workspace for automatic event syncing, or use the export options below."}</small></span></div>
@@ -163,10 +163,5 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
         return <div key={target} className={`calendar-hour ${dragTarget === target ? "drag-over" : ""}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDragTarget(target); }} onDragLeave={() => setDragTarget("")} onDrop={(event) => void dropAtHour(event, date, hour)}>{cards.map((card) => <button key={card.id} draggable onDragStart={(event) => dragCard(event, card)} onClick={() => onOpenCard(card.id)} title={`${timeLabel(card.scheduledStart)} · ${card.title}`}><small>{timeLabel(card.scheduledStart)}</small>{card.title}</button>)}</div>;
       })])}
     </div>}
-
-    <div className="calendar-unscheduled"><h3>From your tray</h3>{trayItems.length === 0 ? <p>You can drag cards straight from the board, or collect them in your tray first.</p> : trayItems.map((item) => {
-      const placement = state.placements.find((entry) => entry.id === item.placementId), card = state.cards.find((entry) => entry.id === placement?.cardId); if (!card) return null;
-      return <div key={item.id} draggable onDragStart={(event) => { const payload = JSON.stringify({ type: "tray", id: item.id }); event.dataTransfer.setData("application/cove-card", payload); event.dataTransfer.setData("text/plain", payload); }}><Icon name="tray" size={12} /><span>{card.title}</span><small>{card.scheduledStart ? timeLabel(card.scheduledStart) : card.dueDate || "Drop on a day or hour"}</small></div>;
-    })}</div>
   </div>;
 }

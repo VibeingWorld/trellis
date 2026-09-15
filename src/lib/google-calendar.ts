@@ -94,7 +94,7 @@ export async function syncCardToGoogle(cardId: string, origin: string) {
     } : { start: { date: card.due_date }, end: { date: endDate(card.due_date!) } }),
     extendedProperties: { private: { coveCardId: card.id } },
   };
-  let response = mapping ? await fetch(`${base}/${encodeURIComponent(mapping.external_event_id)}`, { method: "PATCH", headers, body: JSON.stringify(event) }) : null;
+  let response = mapping ? await fetch(`${base}/${encodeURIComponent(mapping.external_event_id)}`, { method: "PUT", headers, body: JSON.stringify(event) }) : null;
   if (response?.status === 404) {
     sqlite.prepare("DELETE FROM calendar_events WHERE id=?").run(mapping!.id);
     response = null;
