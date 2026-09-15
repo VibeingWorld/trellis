@@ -74,12 +74,22 @@ export default function BoardApp() {
     if (!state) return;
     const selectedBoard = state.boards.find((item) => item.id === activeBoardId);
     if (selectedBoard) {
-      setActiveWorkspaceId(selectedBoard.workspaceId);
-    } else {
-      const nextBoard = state.boards.find((item) => item.workspaceId === activeWorkspaceId) || (!activeWorkspaceId ? state.boards[0] : undefined);
-      setActiveBoardId(nextBoard?.id || "");
-      if (!activeWorkspaceId) setActiveWorkspaceId(nextBoard?.workspaceId || state.workspaces[0]?.id || "");
+      if (selectedBoard.workspaceId !== activeWorkspaceId) setActiveWorkspaceId(selectedBoard.workspaceId);
+      return;
     }
+    const selectedWorkspace = state.workspaces.find((item) => item.id === activeWorkspaceId);
+    const nextWorkspace = selectedWorkspace || state.workspaces[0];
+    const nextWorkspaceId = nextWorkspace?.id || "";
+    const nextBoard = nextWorkspace ? state.boards.find((item) => item.workspaceId === nextWorkspace.id) : undefined;
+    const nextBoardId = nextBoard?.id || "";
+    if (activeWorkspaceId !== nextWorkspaceId) setActiveWorkspaceId(nextWorkspaceId);
+    if (activeBoardId !== nextBoardId) setActiveBoardId(nextBoardId);
+    if (nextWorkspaceId) localStorage.setItem("cove.workspace", nextWorkspaceId);
+    else localStorage.removeItem("cove.workspace");
+    if (nextBoardId) localStorage.setItem("cove.board", nextBoardId);
+    else localStorage.removeItem("cove.board");
+    const url = nextBoardId ? `?board=${encodeURIComponent(nextBoardId)}` : window.location.pathname;
+    if (`${window.location.pathname}${window.location.search}` !== url) window.history.replaceState({}, "", url);
   }, [state, activeBoardId, activeWorkspaceId]);
 
   useEffect(() => {

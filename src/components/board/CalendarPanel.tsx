@@ -38,6 +38,7 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [googleBusy, setGoogleBusy] = useState(false);
+  const workspaceExists = state.workspaces.some((item) => item.id === workspaceId);
   const workspaceCards = state.cards.filter((card) => card.workspaceId === workspaceId && !card.archived);
   const scheduled = workspaceCards.filter((card) => card.dueDate || card.scheduledStart);
   const hours = Array.from({ length: 24 }, (_, index) => index);
@@ -76,6 +77,7 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
   }
 
   function connectGoogle() {
+    if (!workspaceExists) { onNotice("Create a workspace before connecting Google Calendar."); return; }
     const url = appPath(`/api/calendar/google/connect?workspaceId=${encodeURIComponent(workspaceId)}`);
     const popup = window.open(url, "cove-google-calendar", "popup,width=560,height=720");
     if (!popup) onNotice("Allow pop-ups for Cove, then try connecting again.");
@@ -132,7 +134,7 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
   return <div className="calendar-panel">
     <div className="calendar-intro"><div><strong>Plan work in time.</strong><p>Drag directly from any board column or from your tray.</p></div><span>{scheduled.length} scheduled</span></div>
     <div className="calendar-connect">
-      <div><Icon name="link" size={15} /><span><strong>{googleStatus?.connected ? "Google Calendar connected" : googleStatus?.configured ? "Connect Google Calendar" : "Set up Google Calendar"}</strong><small>{googleStatus?.connected ? "Scheduled cards sync automatically to your primary Google Calendar." : "Connect this workspace for automatic event syncing, or use the export options below."}</small></span></div>
+      <div><Icon name="link" size={15} /><span><strong>{!workspaceExists ? "Create a workspace first" : googleStatus?.connected ? "Google Calendar connected" : googleStatus?.configured ? "Connect Google Calendar" : "Set up Google Calendar"}</strong><small>{!workspaceExists ? "Google Calendar connections belong to a workspace. Create one, then return here to connect it." : googleStatus?.connected ? "Scheduled cards sync automatically to your primary Google Calendar." : "Connect this workspace for automatic event syncing, or use the export options below."}</small></span></div>
       {!googleStatus?.configured && <form className="calendar-google-setup" onSubmit={(event) => void saveGoogleSetup(event)}>
         <p>Create a Google OAuth web client, add this authorized redirect URI, then paste its credentials here.</p>
         {googleStatus?.redirectUri && <code>{googleStatus.redirectUri}</code>}
@@ -141,7 +143,7 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
         <button type="submit" disabled={googleBusy}>{googleBusy ? "Saving…" : "Save Google setup"}</button>
       </form>}
       <div className="calendar-connect-actions">
-        {googleStatus?.configured && !googleStatus.connected && <button type="button" disabled={googleBusy} onClick={connectGoogle}>Connect Google Calendar</button>}
+        {googleStatus?.configured && !googleStatus.connected && <button type="button" disabled={googleBusy || !workspaceExists} onClick={connectGoogle}>Connect Google Calendar</button>}
         {googleStatus?.connected && <button type="button" disabled={googleBusy} onClick={() => void disconnectGoogle()}>Disconnect Google</button>}
         <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noreferrer">Open Google Calendar <Icon name="external" size={11} /></a>
         <button type="button" onClick={() => void copyFeed()}><Icon name="copy" size={12} />Copy ICS feed</button><a href={feedPath} download>Download .ics</a>
