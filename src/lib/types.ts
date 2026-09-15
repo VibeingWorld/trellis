@@ -1,0 +1,13 @@
+import type * as schema from '../db/schema';
+export type Workspace = typeof schema.workspaces.$inferSelect;
+export type Board = typeof schema.boards.$inferSelect;
+export type Column = typeof schema.columns.$inferSelect;
+export type Card = typeof schema.cards.$inferSelect;
+export type Placement = typeof schema.placements.$inferSelect;
+export type Tag = typeof schema.tags.$inferSelect;
+export type CardTag = typeof schema.cardTags.$inferSelect;
+export type CardLink = typeof schema.links.$inferSelect;
+export type Attachment = typeof schema.attachments.$inferSelect;
+export type TrayItem = typeof schema.tray.$inferSelect;
+export type CardRelation = typeof schema.relations.$inferSelect;
+export type AppState = {workspaces: Workspace[];boards: Board[];columns: Column[];cards: Card[];placements: Placement[];tags: Tag[];cardTags: CardTag[];links: CardLink[];attachments: Attachment[];tray: TrayItem[];relations: CardRelation[]};
