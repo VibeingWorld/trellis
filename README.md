@@ -16,7 +16,7 @@ The shared side panel has Tray and Calendar tabs and can expand to half the wind
 
 No account connection or OAuth setup is required. Scheduled cards have an **Add to Google Calendar** shortcut that opens a prefilled Google event, and **Download .ics** exports the workspace for Google Calendar, Apple Calendar, Outlook, and other ICS-compatible apps. The ICS feed is one-way, so scheduling changes remain controlled by Cove.
 
-Every card also has a stable `/cards/{cardId}` URL. Opening it resolves the card’s current board placement and opens its details.
+Every card also has a stable `/cards/{cardId}` URL under the configured base path. Opening it resolves the card’s current board placement and opens its details.
 
 ## Checks
 

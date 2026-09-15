@@ -1,3 +1,5 @@
+import { appPath } from "@/lib/app-path";
+
 export type Workspace = { id: string; name: string; description?: string };
 export type Board = { id: string; workspaceId: string; name: string; description?: string; background: string };
 export type Column = { id: string; boardId: string; name: string; position: number; wipLimit: number | null; limitMode: "off" | "warning" | "strict" };
@@ -12,14 +14,14 @@ export type AppState = { workspaces: Workspace[]; boards: Board[]; columns: Colu
 export type ActionResult = { ok?: boolean; error?: string; warning?: string; operationId?: string; undoId?: string; id?: string; [key: string]: unknown };
 
 export async function readState(): Promise<AppState> {
-  const response = await fetch("/api/state", { cache: "no-store" });
+  const response = await fetch(appPath("/api/state"), { cache: "no-store" });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Could not load your workspace.");
   return data;
 }
 
 export async function action(name: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
-  const response = await fetch("/api/actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: name, ...payload }) });
+  const response = await fetch(appPath("/api/actions"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: name, ...payload }) });
   const data = await response.json();
   if (!response.ok || data.error) throw new Error(data.error || "This change could not be saved.");
   return data;

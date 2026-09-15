@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getState } from "@/lib/store";
+import { appPath } from "@/lib/app-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
 
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const events = state.cards.filter((card) => card.workspaceId === workspace.id && card.dueDate && !card.archived).flatMap((card) => {
-    const cardUrl = `${request.nextUrl.origin}/cards/${encodeURIComponent(card.id)}`;
+    const cardUrl = `${request.nextUrl.origin}${appPath(`/cards/${encodeURIComponent(card.id)}`)}`;
     return [
       "BEGIN:VEVENT",
       `UID:${escapeIcs(card.id)}@cove`,

@@ -3,6 +3,7 @@
 import { useMemo, useState, type CSSProperties, type DragEvent } from "react";
 import type { AppState, Card, TrayItem } from "./api";
 import { Icon } from "./Icon";
+import { appPath } from "@/lib/app-path";
 
 type CalendarView = "month" | "week" | "workweek" | "day";
 type Schedule = { dueDate: string | null; scheduledStart: string | null; scheduledEnd: string | null };
@@ -24,7 +25,7 @@ function googleEventUrl(card: Card, origin: string) {
     const start = card.dueDate!.replaceAll("-", ""), end = addDays(new Date(`${card.dueDate}T12:00:00`), 1);
     dates = `${start}/${dateKey(end).replaceAll("-", "")}`;
   }
-  return `https://calendar.google.com/calendar/render?${new URLSearchParams({ action: "TEMPLATE", text: card.title, dates, details: `${card.description || "Cove card"}\n\n${origin}/cards/${card.id}` })}`;
+  return `https://calendar.google.com/calendar/render?${new URLSearchParams({ action: "TEMPLATE", text: card.title, dates, details: `${card.description || "Cove card"}\n\n${origin}${appPath(`/cards/${card.id}`)}` })}`;
 }
 
 export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule, onOpenCard, onNotice }: CalendarPanelProps) {
@@ -68,10 +69,10 @@ export function CalendarPanel({ state, workspaceId, trayItems, busy, onSchedule,
     const payload = JSON.stringify({ type: "placement", id: placement.id });
     event.dataTransfer.setData("application/cove-card", payload); event.dataTransfer.setData("text/plain", payload); event.dataTransfer.effectAllowed = "copyMove";
   }
-  async function copyFeed() { await navigator.clipboard.writeText(`${window.location.origin}/api/calendar.ics?workspaceId=${encodeURIComponent(workspaceId)}`); onNotice("Calendar feed URL copied"); }
+  async function copyFeed() { await navigator.clipboard.writeText(`${window.location.origin}${appPath(`/api/calendar.ics?workspaceId=${encodeURIComponent(workspaceId)}`)}`); onNotice("Calendar feed URL copied"); }
   function shift(amount: number) { if (view === "month") setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + amount, 1)); else setAnchor(addDays(anchor, amount * (view === "day" ? 1 : 7))); }
   const label = view === "month" ? anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" }) : timelineDays.length === 1 ? anchor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : `${timelineDays[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${timelineDays.at(-1)!.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
-  const feedPath = `/api/calendar.ics?workspaceId=${encodeURIComponent(workspaceId)}`;
+  const feedPath = appPath(`/api/calendar.ics?workspaceId=${encodeURIComponent(workspaceId)}`);
 
   return <div className="calendar-panel">
     <div className="calendar-intro"><div><strong>Plan work in time.</strong><p>Drag directly from any board column or from your tray.</p></div><span>{scheduled.length} scheduled</span></div>

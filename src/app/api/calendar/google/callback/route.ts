@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sqlite } from "@/db";
 import { getGoogleCredentials, googleRedirectUri, saveGoogleConnection, syncCardToGoogle } from "@/lib/google-calendar";
+import { appPath } from "@/lib/app-path";
 
 export const runtime = "nodejs";
 
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
     const cards = sqlite.prepare("SELECT id FROM cards WHERE workspace_id=? AND archived=0 AND (due_date IS NOT NULL OR scheduled_start IS NOT NULL)").all(workspaceId) as { id: string }[];
     await Promise.allSettled(cards.map((card) => syncCardToGoogle(card.id, request.nextUrl.origin)));
     const redirect = finish("connected");
-    const options = { httpOnly: true, sameSite: "lax" as const, secure: request.nextUrl.protocol === "https:", maxAge: 0, path: "/api/calendar/google/callback" };
+    const options = { httpOnly: true, sameSite: "lax" as const, secure: request.nextUrl.protocol === "https:", maxAge: 0, path: appPath("/api/calendar/google/callback") };
     redirect.cookies.set("cove_google_state", "", options); redirect.cookies.set("cove_google_workspace", "", options);
     return redirect;
   } catch { return finish("error"); }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sqlite } from "@/db";
+import { appPath } from "@/lib/app-path";
 
 type Connection = {
   id: string;
@@ -26,7 +27,7 @@ export function saveGoogleCredentials(clientId: string, clientSecret: string) {
 }
 
 export function googleRedirectUri(origin: string) {
-  return process.env.GOOGLE_REDIRECT_URI || `${origin}/api/calendar/google/callback`;
+  return process.env.GOOGLE_REDIRECT_URI || `${origin}${appPath("/api/calendar/google/callback")}`;
 }
 
 export function getGoogleConnection(workspaceId: string) {
@@ -86,7 +87,7 @@ export async function syncCardToGoogle(cardId: string, origin: string) {
   }
   const event = {
     summary: card.title,
-    description: `${card.description || "Cove card"}\n\nOpen card: ${origin}/cards/${encodeURIComponent(card.id)}`,
+    description: `${card.description || "Cove card"}\n\nOpen card: ${origin}${appPath(`/cards/${encodeURIComponent(card.id)}`)}`,
     ...(card.scheduled_start ? {
       start: { dateTime: card.scheduled_start },
       end: { dateTime: card.scheduled_end || new Date(Date.parse(card.scheduled_start) + 60 * 60 * 1000).toISOString() },

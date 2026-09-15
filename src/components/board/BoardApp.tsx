@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from "react";
 import CardDetail from "@/components/card/CardDetail";
+import { appPath } from "@/lib/app-path";
 import { action, readState, type AppState, type Board, type Column, type Placement, type TrayItem } from "./api";
 import { CalendarPanel } from "./CalendarPanel";
 import { Icon } from "./Icon";
@@ -20,7 +21,10 @@ const backgrounds = [
 function boardStyle(background: string | undefined): CSSProperties {
   const preset = backgrounds.find((item) => item.id === background);
   const value = preset?.value || background || backgrounds[0].value;
-  if (/^(https?:\/\/|\/api\/uploads\/)/.test(value)) return { backgroundImage: `linear-gradient(#eef3ee30,#eef3ee30),url("${value.replaceAll('"', '%22')}")`, backgroundSize: "cover", backgroundPosition: "center" };
+  if (/^(https?:\/\/|\/api\/uploads\/)/.test(value)) {
+    const imageUrl = value.startsWith("/api/uploads/") ? appPath(value) : value;
+    return { backgroundImage: `linear-gradient(#eef3ee30,#eef3ee30),url("${imageUrl.replaceAll('"', '%22')}")`, backgroundSize: "cover", backgroundPosition: "center" };
+  }
   return { background: value };
 }
 
@@ -277,8 +281,9 @@ function BoardCard({ state, placement, inTray, onOpen, onCollect, onDrop }: { st
   const connections = state.placements.filter((item) => item.cardId === card.id && item.boardId !== placement.boardId);
   const cover = card.cover;
   const imageCover = cover && /^(https?:\/\/|\/api\/uploads\/)/.test(cover);
+  const coverUrl = cover?.startsWith("/api/uploads/") ? appPath(cover) : cover;
   return <article className="board-card" draggable onDrop={onDrop} onDragStart={(event) => { const payload = JSON.stringify({ type: "placement", id: placement.id }); event.dataTransfer.setData("application/cove-card", payload); event.dataTransfer.setData("text/plain", payload); event.dataTransfer.effectAllowed = "copyMove"; }}>
-    {cover && <button className={`card-cover ${!imageCover ? "art-cover" : ""}`} style={!imageCover ? { background: cover } : undefined} onClick={onOpen} tabIndex={-1} aria-label={`Open ${card.title}`}>{imageCover ? <img src={cover} alt="" /> : <span className="cover-art"><i /><i /><i /></span>}</button>}
+    {cover && <button className={`card-cover ${!imageCover ? "art-cover" : ""}`} style={!imageCover ? { background: cover } : undefined} onClick={onOpen} tabIndex={-1} aria-label={`Open ${card.title}`}>{imageCover ? <img src={coverUrl || undefined} alt="" /> : <span className="cover-art"><i /><i /><i /></span>}</button>}
     <div className="card-inner">{tags.length > 0 && <div className="card-tags">{tags.map((tag) => <span className="card-tag" key={tag.id} style={{ "--tag-color": tag.color } as CSSProperties}>{tag.name}</span>)}</div>}<button className="card-open" onClick={onOpen}><h3>{card.title}</h3></button>{card.description && <p className="card-description">{card.description.replace(/[#*`>\[\]]/g, "").slice(0, 105)}</p>}
     <div className="card-bottom"><div className="card-metadata">{connections.length > 0 && <span className="linked-card-badge" title={`Also on ${connections.map((item) => state.boards.find((b) => b.id === item.boardId)?.name).join(", ")}`}><Icon name="link" size={12} />{connections.length + 1} boards</span>}{card.dueDate && <span className="due-date" title={`Scheduled for ${card.dueDate}`}><Icon name="calendar" size={12} />{new Date(`${card.dueDate}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}{card.description && <span title="Has description"><Icon name="text" size={13} /></span>}{attachments.length > 0 && <span title={`${attachments.length} attachments`}><Icon name="paperclip" size={13} />{attachments.length}</span>}{links.length > 0 && <span title={`${links.length} links`}><Icon name="external" size={12} />{links.length}</span>}</div><button className={`collect-button ${inTray ? "collected" : ""}`} title={inTray ? "Already in your tray" : "Add to card tray"} aria-label={inTray ? `${card.title} is in your tray` : `Add ${card.title} to card tray`} disabled={inTray} onClick={onCollect}><Icon name={inTray ? "check" : "tray"} size={14} /></button></div></div>
   </article>;
@@ -342,7 +347,7 @@ function BoardDialog({ dialog, board, workspaceId, busy, onClose, onSubmit }: { 
     {dialog.kind === "background" && <><div className="background-preview" style={boardStyle(background)}><span /><span /><span /></div><div className="background-options">{backgrounds.map((item) => <button type="button" className={background === item.value ? "selected" : ""} key={item.id} onClick={() => setBackground(item.value)}><span style={{ background: item.value }}>{background === item.value && <Icon name="check" size={20} style={{ color: item.ink }} />}</span><small>{item.name}</small></button>)}</div><label className="field-label">Or upload your own image<input type="file" accept="image/png,image/jpeg,image/webp" disabled={uploading || busy} onChange={async (event) => {
       const file = event.target.files?.[0]; if (!file || !board) return;
       setUploading(true); setUploadError("");
-      try { const form = new FormData(); form.append("file", file); form.append("boardId", board.id); const response = await fetch("/api/uploads", { method: "POST", body: form }); const result = await response.json(); if (!response.ok) throw new Error(result.error || "Image could not be uploaded."); setBackground(result.attachment?.url || result.url); }
+      try { const form = new FormData(); form.append("file", file); form.append("boardId", board.id); const response = await fetch(appPath("/api/uploads"), { method: "POST", body: form }); const result = await response.json(); if (!response.ok) throw new Error(result.error || "Image could not be uploaded."); setBackground(result.attachment?.url || result.url); }
       catch (error) { setUploadError(error instanceof Error ? error.message : "Image could not be uploaded."); }
       finally { setUploading(false); }
     }} /></label>{uploading && <p className="field-help">Uploading your background…</p>}{uploadError && <p className="upload-error" role="alert">{uploadError}</p>}</>}

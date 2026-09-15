@@ -3,6 +3,7 @@
 import { action, type AppState } from "../board/api";
 import { CardDetailPanel } from "./CardDetailPanel";
 import type { CardDetailData } from "./types";
+import { appPath } from "@/lib/app-path";
 
 export type CardDetailProps = {
   cardId: string;
@@ -14,7 +15,7 @@ export type CardDetailProps = {
 };
 
 function getUploadUrl(attachment: AppState["attachments"][number]) {
-  return attachment.url || `/api/uploads/${attachment.id}`;
+  return appPath(attachment.url || `/api/uploads/${attachment.id}`);
 }
 
 /** App adapter used by the board. The reusable UI lives in CardDetailPanel. */
@@ -36,7 +37,7 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
     scheduledStart: card.scheduledStart || null,
     scheduledEnd: card.scheduledEnd || null,
     workspaceName: workspace?.name,
-    permalink: `/cards/${encodeURIComponent(card.id)}`,
+    permalink: appPath(`/cards/${encodeURIComponent(card.id)}`),
     tags: availableTags.filter((tag) => attachedTagIds.has(tag.id)),
     availableTags,
     links: state.links.filter((link) => link.cardId === cardId).map((link) => ({ id: link.id, label: link.title || link.label || "Link", url: link.url })),
@@ -81,7 +82,7 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
           const form = new FormData();
           form.append("file", file);
           form.append("cardId", cardId);
-          const response = await fetch("/api/uploads", { method: "POST", body: form });
+          const response = await fetch(appPath("/api/uploads"), { method: "POST", body: form });
           if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             throw new Error(data.error || `Could not upload ${file.name}.`);
@@ -90,7 +91,7 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
         await onRefresh();
       }}
       onRemoveAttachment={(id) => mutate("deleteAttachment", { id })}
-      onSetCover={(attachmentId) => mutate("updateCard", { id: cardId, cover: attachmentId ? getUploadUrl(state.attachments.find((item) => item.id === attachmentId)!) : null, version: card.version })}
+      onSetCover={(attachmentId) => mutate("updateCard", { id: cardId, cover: attachmentId ? state.attachments.find((item) => item.id === attachmentId)?.url || `/api/uploads/${attachmentId}` : null, version: card.version })}
       onNavigatePlacement={(placement) => {
         if (placement.id === placementId) return;
         if (onNavigateBoard) onNavigateBoard(placement.boardId, cardId);
