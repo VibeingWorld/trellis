@@ -10,7 +10,9 @@ async function main(){
  const dataDirectory=path.join(temp,'data');
  const env={...process.env,DATA_DIR:dataDirectory};
  try{
-  await execute(process.execPath,['--import','tsx','-e',"require('./src/db/index.ts')"],{env});
+ await execute(process.execPath,['--import','tsx','-e',"require('./src/db/index.ts')"],{env});
+  const {POST}=await import('../src/app/api/auth/setup/route');
+  assert.equal((await POST()).status,403,'Browser-based administrator setup is disabled');
   await assert.rejects(fs.stat(dataDirectory),{code:'ENOENT'},'Importing a route must not create a database');
   const workers=await Promise.all(Array.from({length:8},()=>execute(process.execPath,['--import','tsx','-e',"const {getState}=require('./src/lib/store.ts');const state=getState();console.log(JSON.stringify({workspaces:state.workspaces.length,cards:state.cards.length}));require('./src/db/index.ts').sqlite.close();"],{env})));
   for(const worker of workers)assert.deepEqual(JSON.parse(worker.stdout),{workspaces:2,cards:13});

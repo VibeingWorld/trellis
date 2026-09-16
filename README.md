@@ -8,7 +8,7 @@ Trellis is a workspace-based Kanban app built with Next.js and SQLite. Cards can
 2. Copy `.env.example` to `.env.local` only if you want to change the persistent data directory.
 3. Run `npm run dev` and open `http://localhost:3000`.
 
-The local SQLite database and starter workspace are created on first launch. The first visit opens a secure setup screen for the initial administrator. After that, admins can create email/password accounts and assign per-workspace permissions from the profile at the bottom of the sidebar.
+The local SQLite database and starter workspace are created on first launch. The first administrator must be provisioned directly on the server; browser-based setup is intentionally disabled. On the standard VPS deployment, run `runuser -u trellis -- npm --prefix /opt/trellis run admin:create -- --email you@example.com --name "Your Name"` and enter the password at the secure prompts. Running as the `trellis` service account preserves database ownership. After that, admins can create email/password accounts and assign per-workspace permissions from the profile at the bottom of the sidebar.
 
 For a trusted private deployment that should open directly as the first active administrator, set `COVE_DISABLE_AUTH=1`. This bypasses the login screen and gives every visitor full administrator access, so do not enable it on a public or untrusted network. Remove the variable or set it to `0` to restore normal account login.
 

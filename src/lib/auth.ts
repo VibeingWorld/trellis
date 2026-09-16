@@ -23,13 +23,14 @@ const validatePassword = (password:unknown) => {
 async function hashPassword(password:string,salt:string) { return (await scrypt(password,salt,64) as Buffer).toString('hex'); }
 
 export function hasUsers() { return Number((sqlite.prepare('SELECT count(*) n FROM users').get() as {n:number}).n)>0; }
+export function hasAdmin() { return Number((sqlite.prepare("SELECT count(*) n FROM users WHERE role='admin' AND active=1").get() as {n:number}).n)>0; }
 
 export async function createFirstAdmin(input:{email:unknown;name:unknown;password:unknown}) {
-  if(hasUsers()) throw new AppError('Setup is already complete.',409);
+  if(hasAdmin()) throw new AppError('An administrator already exists.',409);
   const email=normalizeEmail(input.email), password=validatePassword(input.password);
   if(typeof input.name!=='string'||!input.name.trim()||input.name.length>100)throw new AppError('Enter your name.');const name=input.name.trim();
   const id=randomUUID(),salt=randomBytes(24).toString('hex'),hash=await hashPassword(password,salt),now=Date.now();
-  sqlite.transaction(()=>{if(hasUsers())throw new AppError('Setup is already complete.',409);sqlite.prepare("INSERT INTO users (id,email,name,password_hash,password_salt,role,active,created_at,updated_at) VALUES (?,?,?,?,?,'admin',1,?,?)").run(id,email,name,hash,salt,now,now);}).immediate();
+  sqlite.transaction(()=>{if(hasAdmin())throw new AppError('An administrator already exists.',409);sqlite.prepare("INSERT INTO users (id,email,name,password_hash,password_salt,role,active,created_at,updated_at) VALUES (?,?,?,?,?,'admin',1,?,?)").run(id,email,name,hash,salt,now,now);}).immediate();
   return {id,email,name,role:'admin' as const,active:true};
 }
 
