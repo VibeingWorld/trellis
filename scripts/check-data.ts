@@ -8,6 +8,7 @@ async function main() {
   process.env.DATA_DIR=temp;
   const {mutate,getState}=await import('../src/lib/store');
   const {sqlite}=await import('../src/db');
+  const {createFirstAdmin,getSessionUser}=await import('../src/lib/auth');
   const act=(action:string,payload:Record<string,unknown>={})=>mutate({action,...payload}) as Record<string,any>;
   try {
     const workspace=act('createWorkspace',{name:'Integration tests'}).id;
@@ -61,9 +62,14 @@ async function main() {
     const saved=getState().cards.find(x=>x.id===c.id)!;
     assert.throws(()=>act('updateCard',{id:c.id,title:'Stale',version:saved.version-1}),/changed/);
     assert.equal(sqlite.pragma('integrity_check',{simple:true}),'ok');
+    assert.equal(getSessionUser(undefined),null,'Login is required by default');
+    await createFirstAdmin({email:'owner@example.com',name:'Owner',password:'correct horse battery staple'});
+    process.env.COVE_DISABLE_AUTH='1';
+    assert.equal(getSessionUser(undefined)?.email,'owner@example.com','Disabled auth uses the first active administrator');
+    delete process.env.COVE_DISABLE_AUTH;
     sqlite.pragma('wal_checkpoint(TRUNCATE)');
     assert.ok(fs.statSync(path.join(temp,'trellis.sqlite')).size>0);
-    console.log('PASS: persistence, calendar dates, links, shared content, tray safety, idempotent retry, WIP limits, undo, workspace boundaries, stale conflicts, URL validation, SQLite integrity.');
+    console.log('PASS: persistence, calendar dates, links, shared content, tray safety, idempotent retry, WIP limits, undo, workspace boundaries, stale conflicts, URL validation, auth bypass, SQLite integrity.');
   } finally {sqlite.close();fs.rmSync(temp,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

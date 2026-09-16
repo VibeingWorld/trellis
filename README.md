@@ -10,6 +10,8 @@ Trellis is a workspace-based Kanban app built with Next.js and SQLite. Cards can
 
 The local SQLite database and starter workspace are created on first launch. The first visit opens a secure setup screen for the initial administrator. After that, admins can create email/password accounts and assign per-workspace permissions from the profile at the bottom of the sidebar.
 
+For a trusted private deployment that should open directly as the first active administrator, set `COVE_DISABLE_AUTH=1`. This bypasses the login screen and gives every visitor full administrator access, so do not enable it on a public or untrusted network. Remove the variable or set it to `0` to restore normal account login.
+
 Uploaded images, PDFs, Office documents, text files, and ZIP archives live in `data/uploads`; back up that directory together with the database. Files can be dropped directly onto a card or into its details panel.
 
 ## AI / MCP access

@@ -11,7 +11,7 @@ export type CardLink = { id: string; cardId: string; title?: string; label?: str
 export type Attachment = { id: string; cardId?: string | null; name?: string; originalName?: string; filename?: string; url?: string; mimeType?: string; size?: number | null };
 export type TrayItem = { id: string; placementId: string; mode: "move" | "link"; workspaceId?: string; cardId?: string };
 export type AppUser = {id:string;name:string;email:string;role:"admin"|"member";active:boolean;memberships:{workspaceId:string;permissions:string[]}[]};
-export type AppState = { workspaces: Workspace[]; boards: Board[]; columns: Column[]; cards: Card[]; placements: Placement[]; tags: Tag[]; cardTags: CardTag[]; links: CardLink[]; attachments: Attachment[]; tray: TrayItem[]; relations?: { id: string; cardId: string; relatedCardId: string }[]; currentUser?:Omit<AppUser,"memberships">; permissionsByWorkspace?:Record<string,string[]>; users?:AppUser[] };
+export type AppState = { workspaces: Workspace[]; boards: Board[]; columns: Column[]; cards: Card[]; placements: Placement[]; tags: Tag[]; cardTags: CardTag[]; links: CardLink[]; attachments: Attachment[]; tray: TrayItem[]; relations?: { id: string; cardId: string; relatedCardId: string }[]; authenticationDisabled:boolean; currentUser?:Omit<AppUser,"memberships">; permissionsByWorkspace?:Record<string,string[]>; users?:AppUser[] };
 export type ActionResult = { ok?: boolean; error?: string; warning?: string; operationId?: string; undoId?: string; id?: string; [key: string]: unknown };
 
 export async function readState(): Promise<AppState> {
