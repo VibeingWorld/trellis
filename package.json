@@ -13,7 +13,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:backup": "tsx scripts/backup.ts",
     "admin:create": "node --import tsx scripts/create-admin.ts",
-    "mcp": "node --import tsx src/mcp/server.ts"
+    "mcp": "node --import tsx src/mcp/server.ts",
+    "ai:queue": "node --import tsx scripts/codex-queue.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",

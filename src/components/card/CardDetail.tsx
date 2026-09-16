@@ -30,6 +30,7 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
   const placements = state.placements.filter((item) => item.cardId === cardId);
   const isAdmin=state.currentUser?.role==="admin",permissions=state.permissionsByWorkspace?.[card.workspaceId]||[];
   const canEdit=isAdmin||permissions.includes("editCard"),canMove=isAdmin||permissions.includes("moveCard"),canUpload=isAdmin||permissions.includes("uploadFiles");
+  const integration=state.workspaceIntegrations.find(item=>item.workspaceId===card.workspaceId),githubLink=state.githubLinks.find(item=>item.cardId===cardId),aiRun=state.aiRuns.find(item=>item.cardId===cardId);
 
   const detail: CardDetailData = {
     id: card.id,
@@ -41,6 +42,8 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
     scheduledEnd: card.scheduledEnd || null,
     workspaceName: workspace?.name,
     permalink: appPath(`/cards/${encodeURIComponent(card.id)}`),
+    github:{configured:Boolean(integration?.githubConfigured),owner:integration?.githubOwner,repo:integration?.githubRepo,link:githubLink?{issueNumber:githubLink.issueNumber,issueTitle:githubLink.issueTitle,issueUrl:githubLink.issueUrl,inProject:Boolean(githubLink.projectItemId)}:null},
+    aiRun:aiRun?{status:aiRun.status,threadId:aiRun.threadId,error:aiRun.error,createdAt:aiRun.createdAt}:null,
     tags: availableTags.filter((tag) => attachedTagIds.has(tag.id)),
     availableTags,
     links: state.links.filter((link) => link.cardId === cardId).map((link) => ({ id: link.id, label: link.title || link.label || "Link", url: link.url })),
@@ -80,6 +83,9 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
       onToggleTag={canEdit?(tagId) => mutate("toggleTag", { cardId, tagId }):undefined}
       onAddLink={canEdit?({ label, url }) => mutate("addLink", { cardId, title: label, url }):undefined}
       onRemoveLink={canEdit?(id) => mutate("deleteLink", { id }):undefined}
+      onCreateGithubIssue={canEdit&&integration?.githubConfigured?()=>mutate("createGithubIssue",{cardId}):undefined}
+      onLinkGithubIssue={canEdit&&integration?.githubConfigured?(url)=>mutate("linkGithubIssue",{cardId,url}):undefined}
+      onUnlinkGithubIssue={canEdit&&githubLink?()=>mutate("unlinkGithubIssue",{cardId}):undefined}
       onUploadImages={canUpload?async (files) => {
         for (const file of files) {
           const form = new FormData();

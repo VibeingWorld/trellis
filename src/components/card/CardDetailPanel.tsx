@@ -44,7 +44,7 @@ function toDateTimeInput(value?: string | null) {
 const uploadTypes=["image/jpeg","image/png","image/webp","image/gif","application/pdf","text/plain","text/csv","application/json","application/zip","application/msword","application/vnd.ms-excel","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation"];
 const canUploadFile=(file:File)=>uploadTypes.includes(file.type)||/\.(txt|md|csv|json|zip|doc|docx|xls|xlsx|ppt|pptx)$/i.test(file.name);
 
-export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCreateTag, onAddLink, onRemoveLink, onUploadImages, onRemoveAttachment, onSetCover, onNavigatePlacement, onRemovePlacement, onArchiveEverywhere }: CardDetailPanelProps) {
+export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCreateTag, onAddLink, onRemoveLink, onCreateGithubIssue, onLinkGithubIssue, onUnlinkGithubIssue, onUploadImages, onRemoveAttachment, onSetCover, onNavigatePlacement, onRemovePlacement, onArchiveEverywhere }: CardDetailPanelProps) {
   const titleId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(card.title);
@@ -56,6 +56,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
   const [linkDraft, setLinkDraft] = useState<NewCardLink>({ label: "", url: "" });
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [showTags, setShowTags] = useState(false);
+  const [githubUrl,setGithubUrl]=useState("");
   const [showNewTag, setShowNewTag] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState("#38bdf8");
@@ -212,6 +213,11 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
                 <article className={styles.linkItem} key={link.id}><div className={styles.linkIcon}><Icon name="link" /></div><div><strong>{link.label}</strong><a href={link.url} target="_blank" rel="noreferrer">{link.url}<Icon name="external" /></a></div>{onRemoveLink && <button className={styles.iconButton} type="button" onClick={() => void run("link-remove", () => onRemoveLink(link.id))} aria-label={`Remove ${link.label}`}><Icon name="trash" /></button>}</article>
               ))}</div>
             </section>
+
+            <section className={styles.section} aria-labelledby={`${titleId}-github`}>
+              <div className={styles.sectionHeading}><div><span className={styles.sectionIndex}>04</span><h2 id={`${titleId}-github`}>GitHub</h2></div>{card.github?.link?.inProject&&<span className={styles.count}>In project</span>}</div>
+              {!card.github?.configured?<p className={styles.empty}>Connect a repository from Workspace → Integrations & AI.</p>:card.github.link?<article className={styles.linkItem}><div className={styles.linkIcon}><Icon name="link" /></div><div><strong>#{card.github.link.issueNumber} · {card.github.link.issueTitle}</strong><a href={card.github.link.issueUrl} target="_blank" rel="noreferrer">Open GitHub issue<Icon name="external" /></a></div>{onUnlinkGithubIssue&&<button className={styles.iconButton} type="button" onClick={()=>void run("github-unlink",onUnlinkGithubIssue,"GitHub issue unlinked")} aria-label="Unlink GitHub issue"><Icon name="trash" /></button>}</article>:<div className={styles.githubSetup}><p>Create an issue in <strong>{card.github.owner}/{card.github.repo}</strong>, or link an existing one.</p><div><button className={styles.primaryButton} type="button" disabled={!onCreateGithubIssue||busy==="github-create"} onClick={()=>onCreateGithubIssue&&void run("github-create",onCreateGithubIssue,"GitHub issue created")}>Create issue</button></div><form className={styles.inlineForm} onSubmit={(event)=>{event.preventDefault();if(!validateExternalUrl(githubUrl)){setMessage("Enter a complete GitHub issue URL.");return;}if(onLinkGithubIssue)void run("github-link",async()=>{await onLinkGithubIssue(githubUrl);setGithubUrl("");},"GitHub issue linked");}}><label className={styles.grow}><span>Existing issue URL</span><input type="url" value={githubUrl} onChange={event=>setGithubUrl(event.target.value)} placeholder={`https://github.com/${card.github.owner}/${card.github.repo}/issues/1`} required /></label><button type="submit" disabled={!onLinkGithubIssue||busy==="github-link"}>Link</button></form></div>}
+            </section>
           </main>
 
           <aside className={styles.sidebar}>
@@ -226,6 +232,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
               <h2><Icon name="link" />Card URL</h2>
               <div className={styles.permalink}><a href={card.permalink} target="_blank" rel="noreferrer">Open shareable card URL</a><button type="button" aria-label="Copy card URL" onClick={() => void navigator.clipboard.writeText(new URL(card.permalink!, window.location.origin).href).then(() => setMessage("Card URL copied"))}><Icon name="copy" /></button></div>
             </section>}
+            {card.aiRun&&<section className={styles.sideSection}><h2><Icon name="board" />Codex task</h2><div className={styles.aiStatus}><strong>{card.aiRun.status.replaceAll("_"," ")}</strong><span>{card.aiRun.threadId?`Task ${card.aiRun.threadId}`:card.aiRun.error||"Waiting for the desktop monitor…"}</span></div></section>}
             <section className={styles.sideSection}>
               <h2><Icon name="tag" />Tags</h2>
               <button className={styles.selectButton} type="button" onClick={() => setShowTags((value) => !value)}>{card.tags.length ? `${card.tags.length} selected` : "Select tags"}<span>⌄</span></button>

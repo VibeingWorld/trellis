@@ -51,6 +51,23 @@ export const calendarEvents = sqliteTable('calendar_events', {
   id: text('id').primaryKey(), connectionId: text('connection_id').notNull().references(() => calendarConnections.id, { onDelete: 'cascade' }),
   cardId: text('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }), externalEventId: text('external_event_id').notNull(),
 }, (t) => [uniqueIndex('calendar_event_connection_card').on(t.connectionId, t.cardId)]);
+export const workspaceIntegrations = sqliteTable('workspace_integrations', {
+  workspaceId: text('workspace_id').primaryKey().references(() => workspaces.id, { onDelete: 'cascade' }),
+  githubOwner: text('github_owner'), githubRepo: text('github_repo'), githubProjectUrl: text('github_project_url'),
+  codexProjectName: text('codex_project_name'),
+  aiTriggerColumnId: text('ai_trigger_column_id').references(() => columns.id, { onDelete: 'set null' }),
+  updatedAt: integer('updated_at').notNull(),
+});
+export const githubLinks = sqliteTable('github_links', {
+  id: text('id').primaryKey(), cardId: text('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
+  issueNumber: integer('issue_number').notNull(), issueNodeId: text('issue_node_id').notNull(), issueUrl: text('issue_url').notNull(),
+  issueTitle: text('issue_title').notNull(), projectItemId: text('project_item_id'), createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
+}, (t) => [uniqueIndex('github_link_card').on(t.cardId)]);
+export const aiRuns = sqliteTable('ai_runs', {
+  id: text('id').primaryKey(), cardId: text('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
+  placementId: text('placement_id').notNull(), threadId: text('codex_thread_id'), status: text('status').notNull(), error: text('error'),
+  createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
+});
 export const placements = sqliteTable('placements', {
   id: text('id').primaryKey(), cardId: text('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
   boardId: text('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),

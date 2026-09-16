@@ -6,6 +6,7 @@ import path from 'node:path';
 import { syncCardToGoogle } from '@/lib/google-calendar';
 import { publicOrigin } from '@/lib/app-path';
 import { createManagedUser, getSessionUser, SESSION_COOKIE, updateManagedUser } from '@/lib/auth';
+import { createGithubIssue, enqueueCodexJobForMove, linkGithubIssue, saveWorkspaceIntegration, unlinkGithubIssue } from '@/lib/integrations';
 export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
@@ -14,8 +15,17 @@ export async function POST(request: NextRequest) {
     const data=await request.json();if(!data||typeof data!=='object'||Array.isArray(data))throw new AppError('Invalid request.');
     if(data.action==='createUser'){const result=await createManagedUser(data,user);return NextResponse.json({ok:true,...result,state:(await import('@/lib/store')).getState(user)});}
     if(data.action==='updateUser'){const result=await updateManagedUser(data,user);return NextResponse.json({ok:true,...result,state:(await import('@/lib/store')).getState(user)});}
+    if(data.action==='saveWorkspaceIntegration'){const result=await saveWorkspaceIntegration(data,user);return NextResponse.json({...result,state:(await import('@/lib/store')).getState(user)});}
+    if(data.action==='createGithubIssue'){const result=await createGithubIssue(data,user);return NextResponse.json({...result,state:(await import('@/lib/store')).getState(user)});}
+    if(data.action==='linkGithubIssue'){const result=await linkGithubIssue(data,user);return NextResponse.json({...result,state:(await import('@/lib/store')).getState(user)});}
+    if(data.action==='unlinkGithubIssue'){const result=unlinkGithubIssue(data,user);return NextResponse.json({...result,state:(await import('@/lib/store')).getState(user)});}
     const storedFile=data.action==='deleteAttachment'&&typeof data.id==='string'?sqlite.prepare('SELECT id FROM attachments WHERE id=?').get(data.id) as {id:string}|undefined:undefined;
-    const result=mutate(data,user);
+    const previousColumnId=data.action==='movePlacement'&&typeof data.placementId==='string'?(sqlite.prepare('SELECT column_id FROM placements WHERE id=?').get(data.placementId) as {column_id:string}|undefined)?.column_id:undefined;
+    let result=mutate(data,user);
+    if(data.action==='movePlacement'&&typeof data.placementId==='string'&&typeof data.columnId==='string'&&previousColumnId!==data.columnId){
+      const automation=enqueueCodexJobForMove(data.placementId,data.columnId);
+      if(automation)result={...result,...automation,state:(await import('@/lib/store')).getState(user)};
+    }
     let calendarWarning: string | undefined;
     if(data.action==='updateCard' && typeof data.id==='string') {
       try { await syncCardToGoogle(data.id, publicOrigin(request)); }

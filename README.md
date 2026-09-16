@@ -20,6 +20,12 @@ The project includes a local MCP server and a project-level `.mcp.json`. Start i
 
 By default, MCP runs as the first active administrator. Set `COVE_MCP_USER_EMAIL` to an active Cove account to make MCP honor that account's workspace permissions instead.
 
+Admins can open **Workspace → Integrations & AI** to link a GitHub repository and an optional GitHub Project, then link or create an issue from any card. Set `GITHUB_TOKEN` only in the server environment; a fine-grained token needs repository **Issues: write** access and access to the selected Project. The token is never returned by the state API or sent to the browser.
+
+The same panel can queue a new Codex desktop task when a card enters a chosen column. Enter the exact saved Codex project name and select the trigger column. A Codex desktop heartbeat on the Mac checks this queue through the authorized `personal-vps` SSH alias, creates one task per queued card in the linked project, and records the task ID back on the card. It uses the ChatGPT account already signed into Codex; no OpenAI API key is stored on the VPS.
+
+Queue maintenance is available through `npm run ai:queue -- list`, `claim <jobId> <threadId>`, and `update <jobId> <running|completed|failed> [message]`. These commands are intended for the desktop monitor and return JSON.
+
 ## Calendar connections
 
 The shared side panel has Tray and Calendar tabs and can expand to half the window. Drag a card directly from a board column or from the tray. Month view schedules an all-day card; Week, 5 days, and Day views show hours and schedule a one-hour block when you drop onto a time.

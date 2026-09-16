@@ -31,11 +31,15 @@ CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQU
 CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS workspace_members (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, permissions TEXT NOT NULL DEFAULT '[]', UNIQUE(user_id, workspace_id));
 CREATE TABLE IF NOT EXISTS board_members (board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, UNIQUE(board_id, user_id));
+CREATE TABLE IF NOT EXISTS workspace_integrations (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE, github_owner TEXT, github_repo TEXT, github_project_url TEXT, codex_project_name TEXT, ai_trigger_column_id TEXT REFERENCES columns(id) ON DELETE SET NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS github_links (id TEXT PRIMARY KEY, card_id TEXT NOT NULL UNIQUE REFERENCES cards(id) ON DELETE CASCADE, issue_number INTEGER NOT NULL, issue_node_id TEXT NOT NULL, issue_url TEXT NOT NULL, issue_title TEXT NOT NULL, project_item_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS ai_runs (id TEXT PRIMARY KEY, card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE, placement_id TEXT NOT NULL, codex_thread_id TEXT, status TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS placements_column_idx ON placements(column_id);
 CREATE INDEX IF NOT EXISTS boards_workspace_idx ON boards(workspace_id);
 CREATE INDEX IF NOT EXISTS cards_workspace_idx ON cards(workspace_id);
 CREATE INDEX IF NOT EXISTS sessions_token_idx ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS board_members_user_idx ON board_members(user_id);
+CREATE INDEX IF NOT EXISTS ai_runs_card_idx ON ai_runs(card_id, created_at);
 `;
 
 function addMissingColumns(connection: Database.Database) {
@@ -55,6 +59,10 @@ function addMissingColumns(connection: Database.Database) {
   if (!boardColumns.has('owner_user_id')) connection.exec('ALTER TABLE boards ADD COLUMN owner_user_id TEXT');
   connection.exec('CREATE TABLE IF NOT EXISTS board_members (board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, UNIQUE(board_id, user_id))');
   connection.exec('CREATE INDEX IF NOT EXISTS board_members_user_idx ON board_members(user_id)');
+  const integrationColumns = new Set((connection.prepare('PRAGMA table_info(workspace_integrations)').all() as { name: string }[]).map((column) => column.name));
+  if (!integrationColumns.has('codex_project_name')) connection.exec('ALTER TABLE workspace_integrations ADD COLUMN codex_project_name TEXT');
+  const runColumns = new Set((connection.prepare('PRAGMA table_info(ai_runs)').all() as { name: string }[]).map((column) => column.name));
+  if (!runColumns.has('codex_thread_id')) connection.exec('ALTER TABLE ai_runs ADD COLUMN codex_thread_id TEXT');
   const firstAdmin = connection.prepare("SELECT id FROM users WHERE role='admin' AND active=1 ORDER BY created_at LIMIT 1").get() as {id:string}|undefined;
   if (firstAdmin) connection.prepare('UPDATE boards SET owner_user_id=? WHERE owner_user_id IS NULL').run(firstAdmin.id);
 }

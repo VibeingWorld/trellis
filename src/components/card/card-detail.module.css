@@ -123,6 +123,13 @@
 .linkItem a svg { width: 10px; height: 10px; margin-left: 4px; vertical-align: -1px; }
 .linkItem .iconButton { width: 28px; height: 28px; padding: 7px; }
 .empty { margin: 4px 0; color: #8a9390; font-size: 11px; }
+.githubSetup { display: grid; gap: 11px; padding: 12px; background: #fff; border: 1px solid #e4e7e6; border-radius: 9px; }
+.githubSetup > p { color: #6f7975; font-size: 10px; line-height: 1.5; }
+.githubSetup > div { display: flex; }
+.githubSetup .inlineForm { margin: 0; padding: 0; background: transparent; }
+.aiStatus { display: grid; gap: 4px; padding: 10px; background: #fffaf4; border: 1px solid #e2d5c7; border-radius: 8px; }
+.aiStatus strong { color: #70543e; font-size: 10px; text-transform: capitalize; }
+.aiStatus span { overflow-wrap: anywhere; color: #927a66; font-size: 8px; line-height: 1.45; }
 .permalink { display: flex; align-items: center; overflow: hidden; background: #fffaf4; border: 1px solid #e4d8ca; border-radius: 8px; }
 .permalink a { min-width: 0; padding: 10px; overflow: hidden; flex: 1; color: #76573f; font-size: 10px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .permalink button { width: 34px; height: 34px; display: grid; place-items: center; color: #8a684d; background: transparent; border: 0; cursor: pointer; }

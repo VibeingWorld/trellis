@@ -46,6 +46,8 @@ export type CardDetailData = {
   placements: CardPlacementSummary[];
   coverAttachmentId?: string | null;
   permalink?: string;
+  github?: {configured:boolean;owner?:string|null;repo?:string|null;link?:{issueNumber:number;issueTitle:string;issueUrl:string;inProject:boolean}|null};
+  aiRun?: {status:string;threadId?:string|null;error?:string|null;createdAt:number}|null;
 };
 
 export type CardContentDraft = Pick<CardDetailData, "title" | "description" | "dueDate" | "scheduledStart" | "scheduledEnd">;
@@ -62,6 +64,9 @@ export type CardDetailCallbacks = {
   onCreateTag?: (tag: Omit<CardTag, "id">) => MaybePromise<void>;
   onAddLink?: (link: NewCardLink) => MaybePromise<void>;
   onRemoveLink?: (linkId: string) => MaybePromise<void>;
+  onCreateGithubIssue?: () => MaybePromise<void>;
+  onLinkGithubIssue?: (url:string) => MaybePromise<void>;
+  onUnlinkGithubIssue?: () => MaybePromise<void>;
   onUploadImages?: (files: File[]) => MaybePromise<void>;
   onRemoveAttachment?: (attachmentId: string) => MaybePromise<void>;
   onSetCover?: (attachmentId: string | null) => MaybePromise<void>;
