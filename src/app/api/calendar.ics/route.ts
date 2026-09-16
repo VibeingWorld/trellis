@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getState } from "@/lib/store";
 import { appPath, publicOrigin } from "@/lib/app-path";
+import { getSessionUser, requirePermission, SESSION_COOKIE } from '@/lib/auth';
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,8 +25,10 @@ function nextDate(date: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const user=getSessionUser(request.cookies.get(SESSION_COOKIE)?.value);if(!user)return NextResponse.json({error:'Please sign in.'},{status:401});
   const workspaceId = request.nextUrl.searchParams.get("workspaceId");
-  const state = getState();
+  if(workspaceId)try{requirePermission(user,workspaceId,'read');}catch{return NextResponse.json({error:'Workspace not found.'},{status:404});}
+  const state = getState(user);
   const workspace = state.workspaces.find((item) => item.id === workspaceId);
   if (!workspace) return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
 

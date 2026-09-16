@@ -41,6 +41,8 @@ function toDateTimeInput(value?: string | null) {
   const date = new Date(value);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
+const uploadTypes=["image/jpeg","image/png","image/webp","image/gif","application/pdf","text/plain","text/csv","application/json","application/zip","application/msword","application/vnd.ms-excel","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation"];
+const canUploadFile=(file:File)=>uploadTypes.includes(file.type)||/\.(txt|md|csv|json|zip|doc|docx|xls|xlsx|ppt|pptx)$/i.test(file.name);
 
 export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCreateTag, onAddLink, onRemoveLink, onUploadImages, onRemoveAttachment, onSetCover, onNavigatePlacement, onRemovePlacement, onArchiveEverywhere }: CardDetailPanelProps) {
   const titleId = useId();
@@ -94,6 +96,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
   }
 
   async function save() {
+    if(!onSave)return;
     if (!title.trim()) {
       setMessage("Give this card a title before saving.");
       return;
@@ -131,7 +134,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
   }
 
   function selectAttachments(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []).filter((file) => ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"].includes(file.type));
+    const files = Array.from(event.target.files ?? []).filter(canUploadFile);
     if (!files.length || !onUploadImages) return;
     void run("upload", () => onUploadImages(files), `${files.length} attachment${files.length === 1 ? "" : "s"} uploaded`);
     event.target.value = "";
@@ -139,7 +142,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
 
   function dropAttachments(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    const files = Array.from(event.dataTransfer.files).filter((file) => ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"].includes(file.type));
+    const files = Array.from(event.dataTransfer.files).filter(canUploadFile);
     if (files.length && onUploadImages) void run("upload", () => onUploadImages(files), "Attachments uploaded");
   }
 
@@ -150,8 +153,8 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
       <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className={styles.header}>
           <div className={styles.titleBlock}>
-            <span className={styles.eyebrow}>{card.workspaceName ? `${card.workspaceName} · ` : ""}Card details</span>
-            <input id={titleId} className={styles.titleInput} value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Card title" autoFocus />
+            <span className={styles.eyebrow}>{card.workspaceName ? `${card.workspaceName} · ` : ""}{card.cardNumber?`Card #${card.cardNumber}`:"Card details"}</span>
+            <input id={titleId} className={styles.titleInput} value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Card title" autoFocus disabled={!onSave}/>
           </div>
           <button className={styles.iconButton} type="button" onClick={onClose} aria-label="Close card details"><Icon name="close" /></button>
         </header>
@@ -170,7 +173,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
               </div>
               {editorMode === "write" ? (
                 <div className={styles.editorWrap}>
-                  <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add context, checklists, links, and notes…" aria-label="Card description in Markdown" />
+                  <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add context, checklists, links, and notes…" aria-label="Card description in Markdown" disabled={!onSave}/>
                   <span className={styles.editorHint}>Markdown supported · ⌘ Enter to save</span>
                 </div>
               ) : <MarkdownPreview source={description} className={styles.preview} />}
@@ -182,7 +185,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
                 <div className={styles.gallery}>
                   {card.attachments.map((attachment) => (
                     <figure className={styles.attachment} key={attachment.id}>
-                      {attachment.mimeType === "application/pdf" ? <a className={styles.pdfPreview} href={attachment.url} target="_blank" rel="noreferrer"><Icon name="pdf" /><strong>PDF</strong><span>Open document</span></a> : <>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={attachment.url} alt={attachment.name} /></>}
+                      {attachment.mimeType.startsWith("image/") ? <>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={attachment.url} alt={attachment.name} /></> : <a className={styles.pdfPreview} href={attachment.url} target="_blank" rel="noreferrer"><Icon name="pdf" /><strong>{attachment.mimeType==="application/pdf"?"PDF":"FILE"}</strong><span>{attachment.mimeType==="application/pdf"?"Open document":"Download file"}</span></a>}
                       <figcaption><span title={attachment.name}>{attachment.name}</span><div>
                         {onSetCover && attachment.mimeType.startsWith("image/") && <button type="button" onClick={() => void run("cover", () => onSetCover(card.coverAttachmentId === attachment.id ? null : attachment.id))}>{card.coverAttachmentId === attachment.id ? "Cover ✓" : "Make cover"}</button>}
                         {onRemoveAttachment && <button className={styles.dangerText} type="button" aria-label={`Remove ${attachment.name}`} onClick={() => void run("attachment-remove", () => onRemoveAttachment(attachment.id))}>Remove</button>}
@@ -192,9 +195,9 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
                 </div>
               )}
               {onUploadImages && <div className={styles.dropzone} onDragOver={(event) => event.preventDefault()} onDrop={dropAttachments}>
-                <Icon name="image" /><div><strong>Drop images or PDFs here</strong><span>JPEG, PNG, WebP, GIF or PDF · up to 20 MB</span></div>
+                <Icon name="image" /><div><strong>Drop files here</strong><span>Images, PDF, Office, text or ZIP · up to 20 MB</span></div>
                 <button type="button" onClick={() => fileInput.current?.click()} disabled={busy === "upload"}>{busy === "upload" ? "Uploading…" : "Browse"}</button>
-                <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf" multiple hidden onChange={selectAttachments} />
+                <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,.pdf,.txt,.md,.csv,.json,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden onChange={selectAttachments} />
               </div>}
             </section>
 
@@ -214,9 +217,9 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
           <aside className={styles.sidebar}>
             <section className={styles.sideSection}>
               <h2><Icon name="board" />Schedule</h2>
-              <div className={styles.dateField}><input type="date" value={dueDate} onChange={(event) => { setDueDate(event.target.value); setScheduledStart(""); setScheduledEnd(""); }} aria-label="All-day date" />{(dueDate || scheduledStart) && <button type="button" onClick={() => { setDueDate(""); setScheduledStart(""); setScheduledEnd(""); }}>Clear</button>}</div>
-              <label className={styles.scheduleField}><span>Starts</span><input type="datetime-local" value={scheduledStart} onChange={(event) => { const value = event.target.value; setScheduledStart(value); if (value) { setDueDate(value.slice(0, 10)); if (!scheduledEnd || new Date(scheduledEnd) <= new Date(value)) { const end = new Date(new Date(value).getTime() + 60 * 60 * 1000); setScheduledEnd(new Date(end.getTime() - end.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)); } } }} /></label>
-              <label className={styles.scheduleField}><span>Ends</span><input type="datetime-local" value={scheduledEnd} min={scheduledStart} onChange={(event) => setScheduledEnd(event.target.value)} disabled={!scheduledStart} /></label>
+              <div className={styles.dateField}><input type="date" value={dueDate} disabled={!onSave} onChange={(event) => { setDueDate(event.target.value); setScheduledStart(""); setScheduledEnd(""); }} aria-label="All-day date" />{onSave&&(dueDate || scheduledStart) && <button type="button" onClick={() => { setDueDate(""); setScheduledStart(""); setScheduledEnd(""); }}>Clear</button>}</div>
+              <label className={styles.scheduleField}><span>Starts</span><input type="datetime-local" value={scheduledStart} disabled={!onSave} onChange={(event) => { const value = event.target.value; setScheduledStart(value); if (value) { setDueDate(value.slice(0, 10)); if (!scheduledEnd || new Date(scheduledEnd) <= new Date(value)) { const end = new Date(new Date(value).getTime() + 60 * 60 * 1000); setScheduledEnd(new Date(end.getTime() - end.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)); } } }} /></label>
+              <label className={styles.scheduleField}><span>Ends</span><input type="datetime-local" value={scheduledEnd} min={scheduledStart} onChange={(event) => setScheduledEnd(event.target.value)} disabled={!onSave||!scheduledStart} /></label>
               <p className={styles.sharedNote}>Drag this card directly from any board column onto a day or hour in Calendar.</p>
             </section>
             {card.permalink && <section className={styles.sideSection}>
@@ -248,7 +251,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
 
         <footer className={styles.footer}>
           <div aria-live="polite" className={message?.includes("wrong") || message?.startsWith("Enter") || message?.startsWith("Give") ? styles.error : styles.status}>{message}</div>
-          <div><button className={styles.secondaryButton} type="button" onClick={onClose}>Close</button><button className={styles.primaryButton} type="button" onClick={() => void save()} disabled={!dirty || busy === "save"}>{busy === "save" ? "Saving…" : "Save changes"}</button></div>
+          <div><button className={styles.secondaryButton} type="button" onClick={onClose}>Close</button>{onSave&&<button className={styles.primaryButton} type="button" onClick={() => void save()} disabled={!dirty || busy === "save"}>{busy === "save" ? "Saving…" : "Save changes"}</button>}</div>
         </footer>
       </section>
     </div>

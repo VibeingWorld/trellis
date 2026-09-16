@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sqlite } from "@/db";
 import { getGoogleCredentials, googleRedirectUri, saveGoogleConnection, syncCardToGoogle } from "@/lib/google-calendar";
 import { appPath, publicOrigin } from "@/lib/app-path";
+import { getSessionUser, requirePermission, SESSION_COOKIE } from '@/lib/auth';
 
 export const runtime = "nodejs";
 
@@ -16,8 +17,10 @@ export async function GET(request: NextRequest) {
   const state = request.nextUrl.searchParams.get("state");
   const savedState = request.cookies.get("cove_google_state")?.value;
   const workspaceId = request.cookies.get("cove_google_workspace")?.value;
+  const user=getSessionUser(request.cookies.get(SESSION_COOKIE)?.value);
   const credentials = getGoogleCredentials();
-  if (!code || !state || state !== savedState || !workspaceId || !credentials) return finish("error");
+  if (!code || !state || state !== savedState || !workspaceId || !credentials || !user) return finish("error");
+  try{requirePermission(user,workspaceId,'manageWorkspace');}catch{return finish('error');}
   const origin = publicOrigin(request);
   try {
     const response = await fetch("https://oauth2.googleapis.com/token", {

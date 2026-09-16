@@ -30,7 +30,7 @@ export function seed(sqlite: Database.Database) {
     for (const row of columnRows) c.run(...row);
     const tag = sqlite.prepare('INSERT INTO tags VALUES (?,?,?,?)');
     for (const [id,name,color] of [['tag-design','Design','#e9dff8'],['tag-feature','Feature','#dceade'],['tag-research','Research','#dce9f8'],['tag-ux','UX','#f7e7d1'],['tag-priority','Priority','#f7dcda'],['tag-content','Content','#e6e2fa']]) tag.run(id,'workspace-studio',name,color);
-    const card = sqlite.prepare('INSERT INTO cards (id,workspace_id,title,description,cover,due_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)');
+    const card = sqlite.prepare('INSERT INTO cards (id,workspace_id,card_number,title,description,cover,due_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)');
     const place = sqlite.prepare('INSERT INTO placements (id,card_id,board_id,column_id,position) VALUES (?,?,?,?,?)');
     const ct = sqlite.prepare('INSERT INTO card_tags VALUES (?,?)');
     const rows: {id:string;title:string;description:string;column:string;tags:string[];cover?:string;due?:string}[] = [
@@ -46,13 +46,13 @@ export function seed(sqlite: Database.Database) {
       {id:'card-foundation',title:'Lay the foundations',description:'The essentials are in place: workspaces, boards, cards, and a home for every idea.',column:'col-done',tags:['tag-feature']},
       {id:'card-discovery',title:'Discovery & direction',description:'A focused product that helps thoughtful teams move forward together.',column:'col-done',tags:['tag-research']},
     ];
-    rows.forEach((row,i) => {card.run(row.id,'workspace-studio',row.title,row.description,row.cover||null,row.due||null,now+i,now+i);place.run(`placement-${row.id}` ,row.id,'board-product',row.column,i);for(const t of row.tags)ct.run(row.id,t);});
+    rows.forEach((row,i) => {card.run(row.id,'workspace-studio',i+1,row.title,row.description,row.cover||null,row.due||null,now+i,now+i);place.run(`placement-${row.id}` ,row.id,'board-product',row.column,i);for(const t of row.tags)ct.run(row.id,t);});
     place.run('placement-system-design','card-system','board-design','col-design-work',0);
     place.run('placement-voice-design','card-voice','board-design','col-design-ideas',0);
     place.run('placement-feedback-launch','card-feedback','board-launch','col-launch-todo',0);
-    card.run('card-moodboard','workspace-studio','A fresh perspective','Collect visual inspiration for our next chapter.\n\nThink natural textures, quiet confidence, and plenty of breathing room.','linear-gradient(140deg,#c5d8dc,#eef2e8 55%,#aec6b8)',null,now,now);
+    card.run('card-moodboard','workspace-studio',rows.length+1,'A fresh perspective','Collect visual inspiration for our next chapter.\n\nThink natural textures, quiet confidence, and plenty of breathing room.','linear-gradient(140deg,#c5d8dc,#eef2e8 55%,#aec6b8)',null,now,now);
     place.run('placement-moodboard','card-moodboard','board-design','col-design-ideas',1);ct.run('card-moodboard','tag-design');
-    card.run('card-weekend','workspace-personal','Plan a slow weekend','A walk, a good book, and something homemade.',null,null,now,now);
+    card.run('card-weekend','workspace-personal',1,'Plan a slow weekend','A walk, a good book, and something homemade.',null,null,now,now);
     place.run('placement-weekend','card-weekend','board-personal','col-personal-doing',0);
     sqlite.prepare('INSERT INTO links VALUES (?,?,?,?)').run('link-design','card-system','Design principles','https://www.nngroup.com/articles/ten-usability-heuristics/');
     sqlite.prepare('INSERT INTO tray VALUES (?,?,?,?,?,?)').run('tray-mobile','workspace-studio','placement-card-mobile','move',1,0);

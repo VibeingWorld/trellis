@@ -8,7 +8,15 @@ Trellis is a workspace-based Kanban app built with Next.js and SQLite. Cards can
 2. Copy `.env.example` to `.env.local` only if you want to change the persistent data directory.
 3. Run `npm run dev` and open `http://localhost:3000`.
 
-The local SQLite database and starter workspace are created on first launch. Uploaded images and PDFs live in `data/uploads`; back up that directory together with the database.
+The local SQLite database and starter workspace are created on first launch. The first visit opens a secure setup screen for the initial administrator. After that, admins can create email/password accounts and assign per-workspace permissions from the profile at the bottom of the sidebar.
+
+Uploaded images, PDFs, Office documents, text files, and ZIP archives live in `data/uploads`; back up that directory together with the database. Files can be dropped directly onto a card or into its details panel.
+
+## AI / MCP access
+
+The project includes a local MCP server and a project-level `.mcp.json`. Start it manually with `npm run mcp`, or let an MCP-capable client use the project configuration. It exposes scoped tools to list/read workspaces and boards and to create or update boards, columns, and cards.
+
+By default, MCP runs as the first active administrator. Set `COVE_MCP_USER_EMAIL` to an active Cove account to make MCP honor that account's workspace permissions instead.
 
 ## Calendar connections
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cove": {
+      "command": "npm",
+      "args": ["run", "mcp", "--silent"]
+    }
+  }
+}

@@ -10,4 +10,5 @@ export type CardLink = typeof schema.links.$inferSelect;
 export type Attachment = typeof schema.attachments.$inferSelect;
 export type TrayItem = typeof schema.tray.$inferSelect;
 export type CardRelation = typeof schema.relations.$inferSelect;
-export type AppState = {workspaces: Workspace[];boards: Board[];columns: Column[];cards: Card[];placements: Placement[];tags: Tag[];cardTags: CardTag[];links: CardLink[];attachments: Attachment[];tray: TrayItem[];relations: CardRelation[]};
+export type AppUser = {id:string;name:string;email:string;role:'admin'|'member';active:boolean;memberships:{workspaceId:string;permissions:string[]}[]};
+export type AppState = {workspaces: Workspace[];boards: Board[];columns: Column[];cards: Card[];placements: Placement[];tags: Tag[];cardTags: CardTag[];links: CardLink[];attachments: Attachment[];tray: TrayItem[];relations: CardRelation[];currentUser?:Omit<AppUser,'memberships'>;permissionsByWorkspace?:Record<string,string[]>;users?:AppUser[]};

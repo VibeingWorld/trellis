@@ -28,9 +28,12 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
   const attachedTagIds = new Set(state.cardTags.filter((item) => item.cardId === cardId).map((item) => item.tagId));
   const availableTags = state.tags.filter((tag) => tag.workspaceId === card.workspaceId);
   const placements = state.placements.filter((item) => item.cardId === cardId);
+  const isAdmin=state.currentUser?.role==="admin",permissions=state.permissionsByWorkspace?.[card.workspaceId]||[];
+  const canEdit=isAdmin||permissions.includes("editCard"),canMove=isAdmin||permissions.includes("moveCard"),canUpload=isAdmin||permissions.includes("uploadFiles");
 
   const detail: CardDetailData = {
     id: card.id,
+    cardNumber: card.cardNumber,
     title: card.title,
     description: card.description || "",
     dueDate: card.dueDate || null,
@@ -72,12 +75,12 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
       open
       card={detail}
       onClose={onClose}
-      onSave={({ title, description, dueDate, scheduledStart, scheduledEnd }) => mutate("updateCard", { id: cardId, title, description, dueDate: dueDate || null, scheduledStart: scheduledStart || null, scheduledEnd: scheduledEnd || null, version: card.version })}
-      onCreateTag={({ name, color }) => mutate("createTag", { workspaceId: card.workspaceId, name, color })}
-      onToggleTag={(tagId) => mutate("toggleTag", { cardId, tagId })}
-      onAddLink={({ label, url }) => mutate("addLink", { cardId, title: label, url })}
-      onRemoveLink={(id) => mutate("deleteLink", { id })}
-      onUploadImages={async (files) => {
+      onSave={canEdit?({ title, description, dueDate, scheduledStart, scheduledEnd }) => mutate("updateCard", { id: cardId, title, description, dueDate: dueDate || null, scheduledStart: scheduledStart || null, scheduledEnd: scheduledEnd || null, version: card.version }):undefined}
+      onCreateTag={canEdit?({ name, color }) => mutate("createTag", { workspaceId: card.workspaceId, name, color }):undefined}
+      onToggleTag={canEdit?(tagId) => mutate("toggleTag", { cardId, tagId }):undefined}
+      onAddLink={canEdit?({ label, url }) => mutate("addLink", { cardId, title: label, url }):undefined}
+      onRemoveLink={canEdit?(id) => mutate("deleteLink", { id }):undefined}
+      onUploadImages={canUpload?async (files) => {
         for (const file of files) {
           const form = new FormData();
           form.append("file", file);
@@ -89,16 +92,16 @@ export function CardDetail({ cardId, placementId, state, onClose, onRefresh, onN
           }
         }
         await onRefresh();
-      }}
-      onRemoveAttachment={(id) => mutate("deleteAttachment", { id })}
-      onSetCover={(attachmentId) => mutate("updateCard", { id: cardId, cover: attachmentId ? state.attachments.find((item) => item.id === attachmentId)?.url || `/api/uploads/${attachmentId}` : null, version: card.version })}
+      }:undefined}
+      onRemoveAttachment={canUpload?(id) => mutate("deleteAttachment", { id }):undefined}
+      onSetCover={canEdit?(attachmentId) => mutate("updateCard", { id: cardId, cover: attachmentId ? state.attachments.find((item) => item.id === attachmentId)?.url || `/api/uploads/${attachmentId}` : null, version: card.version }):undefined}
       onNavigatePlacement={(placement) => {
         if (placement.id === placementId) return;
         if (onNavigateBoard) onNavigateBoard(placement.boardId, cardId);
         else window.location.hash = `board=${encodeURIComponent(placement.boardId)}&card=${encodeURIComponent(cardId)}`;
       }}
-      onRemovePlacement={(id) => mutate("removePlacement", { id, archiveIfLast: false })}
-      onArchiveEverywhere={() => mutate("updateCard", { id: cardId, archived: true, version: card.version }).then(onClose)}
+      onRemovePlacement={canMove?(id) => mutate("removePlacement", { id, archiveIfLast: false }):undefined}
+      onArchiveEverywhere={canEdit?() => mutate("updateCard", { id: cardId, archived: true, version: card.version }).then(onClose):undefined}
     />
   );
 }

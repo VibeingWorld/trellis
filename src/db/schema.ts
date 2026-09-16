@@ -17,10 +17,26 @@ export const columns = sqliteTable('columns', {
 });
 export const cards = sqliteTable('cards', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
+  cardNumber: integer('card_number').notNull(),
   title: text('title').notNull(), description: text('description').notNull().default(''),
   cover: text('cover'), dueDate: text('due_date'), scheduledStart: text('scheduled_start'), scheduledEnd: text('scheduled_end'), archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   version: integer('version').notNull().default(1), createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
 });
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(), email: text('email').notNull().unique(), name: text('name').notNull(),
+  passwordHash: text('password_hash').notNull(), passwordSalt: text('password_salt').notNull(),
+  role: text('role').notNull().default('member'), active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
+});
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey(), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(), expiresAt: integer('expires_at').notNull(), createdAt: integer('created_at').notNull(),
+});
+export const workspaceMembers = sqliteTable('workspace_members', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  permissions: text('permissions').notNull().default('[]'),
+}, (t) => [uniqueIndex('workspace_member_unique').on(t.userId, t.workspaceId)]);
 export const calendarConnections = sqliteTable('calendar_connections', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   provider: text('provider').notNull().default('google'), accessToken: text('access_token').notNull(), refreshToken: text('refresh_token'),

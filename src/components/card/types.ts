@@ -32,6 +32,7 @@ export type CardPlacementSummary = {
 
 export type CardDetailData = {
   id: string;
+  cardNumber?: number;
   title: string;
   description: string;
   dueDate?: string | null;
@@ -56,7 +57,7 @@ export type NewCardLink = {
 
 export type CardDetailCallbacks = {
   onClose: () => void;
-  onSave: (draft: CardContentDraft) => MaybePromise<void>;
+  onSave?: (draft: CardContentDraft) => MaybePromise<void>;
   onToggleTag?: (tagId: string, attached: boolean) => MaybePromise<void>;
   onCreateTag?: (tag: Omit<CardTag, "id">) => MaybePromise<void>;
   onAddLink?: (link: NewCardLink) => MaybePromise<void>;
