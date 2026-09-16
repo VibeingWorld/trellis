@@ -38,6 +38,7 @@ export function CalendarPanel({ state, workspaceId, busy, onSchedule, onOpenCard
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleDetailsOpen, setGoogleDetailsOpen] = useState(false);
   const workspaceExists = state.workspaces.some((item) => item.id === workspaceId);
   const workspaceCards = state.cards.filter((card) => card.workspaceId === workspaceId && !card.archived);
   const scheduled = workspaceCards.filter((card) => card.dueDate || card.scheduledStart);
@@ -64,6 +65,10 @@ export function CalendarPanel({ state, workspaceId, busy, onSchedule, onOpenCard
     window.addEventListener("message", receiveConnection);
     return () => window.removeEventListener("message", receiveConnection);
   }, [onNotice, refreshGoogleStatus]);
+
+  useEffect(() => {
+    if (googleStatus?.connected) setGoogleDetailsOpen(false);
+  }, [googleStatus?.connected, workspaceId]);
 
   async function saveGoogleSetup(event: FormEvent) {
     event.preventDefault(); setGoogleBusy(true);
@@ -130,12 +135,15 @@ export function CalendarPanel({ state, workspaceId, busy, onSchedule, onOpenCard
   function shift(amount: number) { if (view === "month") setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + amount, 1)); else setAnchor(addDays(anchor, amount * (view === "day" ? 1 : 7))); }
   const label = view === "month" ? anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" }) : timelineDays.length === 1 ? anchor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : `${timelineDays[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${timelineDays.at(-1)!.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
   const feedPath = appPath(`/api/calendar.ics?workspaceId=${encodeURIComponent(workspaceId)}`);
+  const googleConnected = Boolean(googleStatus?.connected);
+  const showGoogleDetails = !googleConnected || googleDetailsOpen;
 
   return <div className={`calendar-panel view-${view}`}>
     <div className="calendar-intro"><div><strong>Plan work in time.</strong><p>Drag directly from any board column or from your tray.</p></div><span>{scheduled.length} scheduled</span></div>
-    <div className="calendar-connect">
-      <div><Icon name="link" size={15} /><span><strong>{!workspaceExists ? "Create a workspace first" : googleStatus?.connected ? "Google Calendar connected" : googleStatus?.configured ? "Connect Google Calendar" : "Set up Google Calendar"}</strong><small>{!workspaceExists ? "Google Calendar connections belong to a workspace. Create one, then return here to connect it." : googleStatus?.connected ? "Scheduled cards sync automatically to your primary Google Calendar." : "Connect this workspace for automatic event syncing, or use the export options below."}</small></span></div>
-      {!googleStatus?.configured && <form className="calendar-google-setup" onSubmit={(event) => void saveGoogleSetup(event)}>
+    <div className={`calendar-connect ${googleConnected && !googleDetailsOpen ? "is-collapsed" : ""}`}>
+      <div className="calendar-connect-heading"><Icon name="link" size={15} /><span className="calendar-connect-copy"><strong>{!workspaceExists ? "Create a workspace first" : googleConnected ? "Google Calendar connected" : googleStatus?.configured ? "Connect Google Calendar" : "Set up Google Calendar"}</strong><small>{!workspaceExists ? "Google Calendar connections belong to a workspace. Create one, then return here to connect it." : googleConnected ? "Scheduled cards sync automatically to your primary Google Calendar." : "Connect this workspace for automatic event syncing, or use the export options below."}</small></span>{googleConnected && <button type="button" className="calendar-connect-toggle" aria-expanded={googleDetailsOpen} aria-controls="google-calendar-details" onClick={() => setGoogleDetailsOpen((open) => !open)}><span>{googleDetailsOpen ? "Collapse" : "Manage"}</span><Icon name="chevron" size={13} /></button>}</div>
+      {showGoogleDetails && <div id="google-calendar-details" className="calendar-connect-details">
+      {googleStatus && !googleStatus.configured && <form className="calendar-google-setup" onSubmit={(event) => void saveGoogleSetup(event)}>
         <p>Create a Google OAuth web client, add this authorized redirect URI, then paste its credentials here.</p>
         {googleStatus?.redirectUri && <code>{googleStatus.redirectUri}</code>}
         <label>Client ID<input type="text" value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="…apps.googleusercontent.com" autoComplete="off" required /></label>
@@ -149,6 +157,7 @@ export function CalendarPanel({ state, workspaceId, busy, onSchedule, onOpenCard
         <button type="button" onClick={() => void copyFeed()}><Icon name="copy" size={12} />Copy ICS feed</button><a href={feedPath} download>Download .ics</a>
       </div>
       {googleStatus?.configured && !googleStatus.connected && <small className="calendar-google-redirect">Google redirect URI: <code>{googleStatus.redirectUri}</code></small>}
+      </div>}
     </div>
     <div className="calendar-view-switch" role="tablist" aria-label="Calendar view">{([["month","Month"],["week","Week"],["workweek","5 days"],["day","Day"]] as [CalendarView,string][]).map(([id, name]) => <button key={id} role="tab" aria-selected={view === id} className={view === id ? "active" : ""} onClick={() => setView(id)}>{name}</button>)}</div>
     <div className="calendar-nav"><button type="button" className="icon-button" aria-label="Previous period" onClick={() => shift(-1)}>‹</button><h3>{label}</h3><div><button type="button" onClick={() => setAnchor(new Date())}>Today</button><button type="button" className="icon-button" aria-label="Next period" onClick={() => shift(1)}>›</button></div></div>
