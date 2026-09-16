@@ -80,3 +80,13 @@
 @media(max-width:800px){.board-header{display:grid;grid-template-columns:1fr auto;min-height:98px;padding:10px 18px}.board-toolbar{position:static;grid-column:1/-1;width:100%;margin-top:5px;transform:none}.toolbar-actions{width:100%}.board-search{flex:1;width:auto}.columns-scroller{padding-top:8px}}
 @media(max-width:500px){.board-header{padding:9px 18px}.tag-filter{width:78px}}
 .board-toolbar{top:20px;transform:none}
+
+/* Bordered board columns with one add-column control */
+.add-column-top{display:none!important}
+.kanban-column{padding:10px;background:#f7f9f5a8;border:1px solid #cbd6c8;border-radius:9px;box-shadow:0 1px 2px #354a3108}
+.kanban-column.drag-over{width:259px;margin:0;padding:10px;background:#edf4e8;border-color:#84a175;box-shadow:0 0 0 2px #84a175}
+.column-header{padding:0 2px 10px}.column-cards{min-height:2px}.add-card-button{margin-top:8px;border-top:1px solid #dce4d9;border-radius:0}
+@media(min-width:1650px){.kanban-column.drag-over{width:285px}}
+@media(max-width:1250px){.kanban-column.drag-over{width:245px}}
+@media(max-width:800px){.kanban-column.drag-over{width:250px}}
+@media(max-width:500px){.kanban-column{padding:9px}.kanban-column.drag-over{padding:9px}}
