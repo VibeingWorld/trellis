@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline';
 import { sqlite } from '../db';
 import { getState, mutate } from '../lib/store';
 import type { SessionUser } from '../lib/auth';
-import { claimCodexJob, listCodexJobs, updateCodexJob } from '../lib/integrations';
+import { attachCodexJob, claimCodexJob, listCodexJobs, updateCodexJob } from '../lib/integrations';
 
 type Request={jsonrpc:'2.0';id?:string|number;method:string;params?:Record<string,any>};
 const tools=[
@@ -16,6 +16,7 @@ const tools=[
  {name:'move_card',description:'Move a card appearance to another column.',inputSchema:{type:'object',properties:{placementId:{type:'string'},columnId:{type:'string'}},required:['placementId','columnId'],additionalProperties:false}},
  {name:'list_codex_jobs',description:'List queued card jobs waiting for the Codex desktop monitor.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
  {name:'claim_codex_job',description:'Attach a newly created Codex task to a queued card job.',inputSchema:{type:'object',properties:{jobId:{type:'string'},threadId:{type:'string'}},required:['jobId','threadId'],additionalProperties:false}},
+ {name:'attach_codex_job',description:'Replace a dispatch reservation with the created Codex task ID.',inputSchema:{type:'object',properties:{jobId:{type:'string'},threadId:{type:'string'}},required:['jobId','threadId'],additionalProperties:false}},
  {name:'update_codex_job',description:'Update a claimed Codex card job status.',inputSchema:{type:'object',properties:{jobId:{type:'string'},status:{type:'string',enum:['running','completed','failed']},message:{type:'string'}},required:['jobId','status'],additionalProperties:false}},
 ];
 function actor():SessionUser{
@@ -35,9 +36,10 @@ function callTool(name:string,args:Record<string,any>){
  if(name==='create_card')return text(mutate({action:'createCard',...args},user));
  if(name==='update_card'){const card=state.cards.find(item=>item.id===args.cardId);if(!card)throw new Error('Card not found or unavailable.');const {cardId,...changes}=args;return text(mutate({action:'updateCard',id:cardId,version:card.version,...changes},user));}
  if(name==='move_card'){const placement=state.placements.find(item=>item.id===args.placementId);if(!placement)throw new Error('Card placement not found or unavailable.');return text(mutate({action:'movePlacement',...args,version:placement.version},user));}
- if(['list_codex_jobs','claim_codex_job','update_codex_job'].includes(name)&&user.role!=='admin')throw new Error('Only a Cove administrator can manage Codex jobs.');
+ if(['list_codex_jobs','claim_codex_job','attach_codex_job','update_codex_job'].includes(name)&&user.role!=='admin')throw new Error('Only a Cove administrator can manage Codex jobs.');
  if(name==='list_codex_jobs')return text(listCodexJobs());
  if(name==='claim_codex_job')return text(claimCodexJob(args.jobId,args.threadId));
+ if(name==='attach_codex_job')return text(attachCodexJob(args.jobId,args.threadId));
  if(name==='update_codex_job')return text(updateCodexJob(args.jobId,args.status,args.message));
  throw new Error('Unknown tool.');
 }

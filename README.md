@@ -24,7 +24,7 @@ Admins can open **Workspace → Integrations & AI** to link a GitHub repository 
 
 The same panel can queue a new Codex desktop task when a card enters a chosen column. Enter the exact saved Codex project name and select the trigger column. A Codex desktop heartbeat on the Mac checks this queue through the authorized `personal-vps` SSH alias, creates one task per queued card in the linked project, and records the task ID back on the card. It uses the ChatGPT account already signed into Codex; no OpenAI API key is stored on the VPS.
 
-Queue maintenance is available through `npm run ai:queue -- list`, `claim <jobId> <threadId>`, and `update <jobId> <running|completed|failed> [message]`. These commands are intended for the desktop monitor and return JSON.
+Queue maintenance is available through `npm run ai:queue -- list`, `claim <jobId> <reservation>`, `attach <jobId> <threadId>`, and `update <jobId> <running|completed|failed> [message]`. These commands are intended for the desktop monitor and return JSON.
 
 ## Calendar connections
 
