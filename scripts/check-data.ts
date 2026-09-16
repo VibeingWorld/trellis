@@ -15,6 +15,12 @@ async function main() {
     const a=act('createBoard',{workspaceId:workspace,name:'A'}).id;
     const b=act('createBoard',{workspaceId:workspace,name:'B'}).id;
     const state=getState(),ca=state.columns.find(c=>c.boardId===a)!.id,cb=state.columns.find(c=>c.boardId===b)!.id;
+    const secondColumn=act('createColumn',{boardId:a,name:'Second'}).id;
+    const thirdColumn=act('createColumn',{boardId:a,name:'Third'}).id;
+    act('updateColumn',{id:thirdColumn,position:.5});
+    const reorderedColumns=getState().columns.filter(column=>column.boardId===a).sort((left,right)=>left.position-right.position).map(column=>column.id);
+    assert.equal(reorderedColumns.indexOf(thirdColumn),reorderedColumns.indexOf(ca)+1,'Column positions persist and control board order');
+    assert.ok(reorderedColumns.indexOf(thirdColumn)<reorderedColumns.indexOf(secondColumn),'A column can be placed before another column');
     const c=act('createCard',{columnId:ca,title:'Shared card',description:'**Markdown**'});
     const tag=act('createTag',{workspaceId:workspace,name:'Test',color:'#ffddaa'}).id;
     act('toggleTag',{cardId:c.id,tagId:tag});
@@ -94,7 +100,7 @@ async function main() {
     delete process.env.COVE_DISABLE_AUTH;
     sqlite.pragma('wal_checkpoint(TRUNCATE)');
     assert.ok(fs.statSync(path.join(temp,'trellis.sqlite')).size>0);
-    console.log('PASS: persistence, calendar dates, links, shared content, tray safety, idempotent retry, WIP limits, undo, workspace boundaries, stale conflicts, URL validation, board privacy, selected members, board-only accounts, public read-only access, auth bypass, SQLite integrity.');
+    console.log('PASS: persistence, column ordering, calendar dates, links, shared content, tray safety, idempotent retry, WIP limits, undo, workspace boundaries, stale conflicts, URL validation, board privacy, selected members, board-only accounts, public read-only access, auth bypass, SQLite integrity.');
   } finally {sqlite.close();fs.rmSync(temp,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

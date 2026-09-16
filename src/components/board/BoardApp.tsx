@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from "react";
 import CardDetail from "@/components/card/CardDetail";
 import { appPath } from "@/lib/app-path";
 import { action, readState, signOut, type AppState, type AppUser, type Board, type Column, type Placement, type TrayItem } from "./api";
@@ -31,7 +31,7 @@ function boardStyle(background: string | undefined): CSSProperties {
 type Dialog = { kind: "workspace" } | { kind: "workspaceSettings" } | { kind: "board" } | { kind: "column" } | { kind: "columnSettings"; column: Column } | { kind: "background" } | { kind: "boardSettings" } | {kind:"account"} | {kind:"integrations"};
 type BoardSettingsDialog = Exclude<Dialog,{kind:"account"}|{kind:"integrations"}>;
 type Toast = { message: string; error?: boolean; undoId?: string };
-type DragPayload = { type: "placement"; id: string } | { type: "tray"; id: string };
+type DragPayload = { type: "placement"; id: string } | { type: "tray"; id: string } | { type: "column"; id: string };
 
 export default function BoardApp() {
   const [state, setState] = useState<AppState | null>(null);
@@ -50,6 +50,7 @@ export default function BoardApp() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragTarget, setDragTarget] = useState("");
+  const [columnDragTarget, setColumnDragTarget] = useState("");
   const [activeTrayItem, setActiveTrayItem] = useState<string | null>(null);
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null);
   const mutationLock = useRef(false);
@@ -207,7 +208,22 @@ export default function BoardApp() {
   }
 
   function dragData(event: DragEvent): DragPayload | null {
-    try { return JSON.parse(event.dataTransfer.getData("application/cove-card") || event.dataTransfer.getData("text/plain")) as DragPayload; } catch { return null; }
+    try { return JSON.parse(event.dataTransfer.getData("application/cove-column") || event.dataTransfer.getData("application/cove-card") || event.dataTransfer.getData("text/plain")) as DragPayload; } catch { return null; }
+  }
+
+  async function dropColumnBefore(event: DragEvent, targetId?: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    setColumnDragTarget("");
+    const payload = dragData(event);
+    if (payload?.type !== "column" || payload.id === targetId) return;
+    const remaining = columns.filter((item) => item.id !== payload.id);
+    const index = targetId ? remaining.findIndex((item) => item.id === targetId) : remaining.length;
+    if (index < 0) return;
+    const before = remaining[index - 1]?.position;
+    const after = remaining[index]?.position;
+    const nextPosition = before === undefined ? (after ?? 0) - 1 : after === undefined ? before + 1 : (before + after) / 2;
+    await mutate("updateColumn", { id: payload.id, position: nextPosition }, "Column moved");
   }
 
   async function dropOnColumn(event: DragEvent, column: Column) {
@@ -216,13 +232,15 @@ export default function BoardApp() {
     const payload = dragData(event);
     if (!payload) return;
     if (payload.type === "tray") await placeTrayItem(payload.id, column.id);
-    else await mutate("movePlacement", { placementId: payload.id, columnId: column.id, version: state?.placements.find((item) => item.id === payload.id)?.version }, `Moved to ${column.name}`);
+    else if (payload.type === "placement") await mutate("movePlacement", { placementId: payload.id, columnId: column.id, version: state?.placements.find((item) => item.id === payload.id)?.version }, `Moved to ${column.name}`);
   }
 
   async function dropOnCard(event: DragEvent, target: Placement) {
+    const payload = dragData(event);
+    if (payload?.type === "column") return;
     event.preventDefault(); event.stopPropagation(); setDragTarget("");
     if (event.dataTransfer.files.length) { setFileDropTarget(null); if(can("uploadFiles")) await uploadFilesToCard(target.cardId,Array.from(event.dataTransfer.files)); return; }
-    const payload = dragData(event); if (!payload || !state) return;
+    if (!payload || !state) return;
     if (payload.type === "placement" && payload.id === target.id) return;
     const sorted = state.placements.filter((item) => item.columnId === target.columnId && !(payload.type === "placement" && item.id === payload.id)).sort((a, b) => a.position - b.position);
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -283,14 +301,14 @@ export default function BoardApp() {
                 return card && card.title.toLowerCase().includes(search.toLowerCase()) && (!tagFilter || state.cardTags.some((entry) => entry.cardId === card.id && entry.tagId === tagFilter));
               });
               const atCapacity = column.limitMode !== "off" && !!column.wipLimit && allPlacements.length >= column.wipLimit;
-              return <section key={column.id} className={`kanban-column ${dragTarget === column.id ? "drag-over" : ""} ${activeTrayItem ? "is-destination" : ""}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragTarget(column.id); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragTarget(""); }} onDrop={(event) => dropOnColumn(event, column)}>
-                <div className="column-header"><span className={`column-status status-${index % 5}`} /><h2>{column.name}</h2><span className={`column-count ${atCapacity ? "at-capacity" : ""}`} title={column.limitMode === "off" ? `${allPlacements.length} cards` : `${column.limitMode} limit`}>{allPlacements.length}{column.limitMode !== "off" && column.wipLimit ? ` / ${column.wipLimit}` : ""}</span>{can("createColumn")&&<button className="icon-button" aria-label={`Settings for ${column.name}`} onClick={() => setDialog({ kind: "columnSettings", column })}><Icon name="more" size={17} /></button>}</div>
+              return <Fragment key={column.id}><section className={`kanban-column ${dragTarget === column.id ? "drag-over" : ""} ${columnDragTarget === column.id ? "column-drag-over" : ""} ${activeTrayItem ? "is-destination" : ""}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; if (Array.from(event.dataTransfer.types).includes("application/cove-column")) { setColumnDragTarget(column.id); setDragTarget(""); } else { setDragTarget(column.id); setColumnDragTarget(""); } }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) { setDragTarget(""); setColumnDragTarget(""); } }} onDrop={(event) => Array.from(event.dataTransfer.types).includes("application/cove-column") ? dropColumnBefore(event, column.id) : dropOnColumn(event, column)}>
+                <div className="column-header">{can("createColumn")&&<button className="column-drag-handle" draggable aria-label={`Move ${column.name}`} title="Drag to reorder column" onDragStart={(event)=>{const payload=JSON.stringify({type:"column",id:column.id});event.dataTransfer.setData("application/cove-column",payload);event.dataTransfer.setData("text/plain",payload);event.dataTransfer.effectAllowed="move";}} onDragEnd={()=>setColumnDragTarget("")}><Icon name="drag" size={14}/></button>}<span className={`column-status status-${index % 5}`} /><h2>{column.name}</h2><span className={`column-count ${atCapacity ? "at-capacity" : ""}`} title={column.limitMode === "off" ? `${allPlacements.length} cards` : `${column.limitMode} limit`}>{allPlacements.length}{column.limitMode !== "off" && column.wipLimit ? ` / ${column.wipLimit}` : ""}</span>{can("createColumn")&&<button className="icon-button" aria-label={`Settings for ${column.name}`} onClick={() => setDialog({ kind: "columnSettings", column })}><Icon name="more" size={17} /></button>}</div>
                 {column.limitMode !== "off" && column.wipLimit && <div className={`column-limit ${atCapacity ? "at-capacity" : ""}`}><div><span style={{ width: `${Math.min(100, allPlacements.length / column.wipLimit * 100)}%` }} /></div><small>{atCapacity ? "At capacity" : `${column.wipLimit - allPlacements.length} spaces left`}<span>{column.limitMode === "strict" ? "Strict limit" : "Soft limit"}</span></small></div>}
                 {activeTrayItem && <button className="place-here-button" disabled={busy} onClick={() => placeTrayItem(activeTrayItem, column.id)}><Icon name="tray" size={16} />Place card here</button>}
                 <div className="column-cards">{visiblePlacements.map((item) => <BoardCard key={item.id} state={state} placement={item} inTray={state.tray.some((entry) => entry.placementId === item.id)} fileDrop={fileDropTarget===item.id} canUpload={can("uploadFiles")} canMove={can("moveCard")} onFileHover={(active)=>setFileDropTarget(active?item.id:null)} onOpen={() => openCard(item.cardId)} onDrop={(event) => dropOnCard(event, item)} onCollect={() => { setTrayOpen(true); if (window.innerWidth <= 800) setCalendarOpen(false); mutate("addToTray", { placementId: item.id, mode: "move" }, "Card added to your tray"); }} />)}{visiblePlacements.length === 0 && (search || tagFilter) && <div className="no-match">No matching cards</div>}</div>
                 {can("createCard")&&<AddCard disabled={busy} onAdd={async (title) => !!(await mutate("createCard", { columnId: column.id, boardId: board.id, workspaceId: activeWorkspaceId, title }, "Card created"))} />}
-              </section>;
-            })}{can("createColumn")&&<button className="add-column-end" onClick={() => setDialog({ kind: "column" })}><Icon name="plus" size={17} />Add a column</button>}</div></div>
+              </section></Fragment>;
+            })}{can("createColumn")&&<div className={`column-end-zone ${columnDragTarget === "end" ? "column-drag-over" : ""}`} onDragOver={(event)=>{if(Array.from(event.dataTransfer.types).includes("application/cove-column")){event.preventDefault();event.dataTransfer.dropEffect="move";setColumnDragTarget("end");}}} onDragLeave={()=>setColumnDragTarget("")} onDrop={(event)=>dropColumnBefore(event)}><button className="add-column-end" onClick={() => setDialog({ kind: "column" })}><Icon name="plus" size={17} />Add a column</button></div>}</div></div>
             <footer className="board-footer"><span><span className="footer-dot" />{totalCards} cards across {columns.length} columns</span>{linkedCards > 0 && <span><Icon name="link" size={13} />{linkedCards} connected {linkedCards === 1 ? "card" : "cards"}</span>}<span className="board-footer-tip">A little progress, every day.</span></footer>
           </> : <div className="empty-board"><div className="empty-board-icon"><Icon name="board" size={32} /></div><h1>A fresh space for your ideas.</h1><p>Create your first board and make something happen.</p><button className="button primary" onClick={() => setDialog({ kind: state.workspaces.length ? "board" : "workspace" })}><Icon name="plus" size={16} />{state.workspaces.length ? "Create a board" : "Create a workspace"}</button></div>}
         </section>

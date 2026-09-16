@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-export type IconName = "board" | "grid" | "chevron" | "plus" | "search" | "tray" | "link" | "arrow" | "close" | "image" | "settings" | "check" | "more" | "menu" | "text" | "external" | "paperclip" | "sun" | "folder" | "undo" | "spark" | "help" | "calendar" | "expand" | "pdf" | "copy";
+export type IconName = "board" | "grid" | "chevron" | "plus" | "search" | "tray" | "link" | "arrow" | "close" | "image" | "settings" | "check" | "more" | "menu" | "drag" | "text" | "external" | "paperclip" | "sun" | "folder" | "undo" | "spark" | "help" | "calendar" | "expand" | "pdf" | "copy";
 const paths: Record<IconName, React.ReactNode> = {
   board: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 8v8M15 8v5"/></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
@@ -13,6 +13,7 @@ const paths: Record<IconName, React.ReactNode> = {
   settings: <><path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3" fill="currentColor"/><circle cx="16" cy="17" r="3" fill="currentColor"/></>,
   check: <path d="m5 12 4 4L19 6"/>, more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
   menu: <path d="M4 6h16M4 12h16M4 18h16"/>, text: <path d="M4 6h16M4 10h16M4 14h11M4 18h7"/>,
+  drag: <><circle cx="8" cy="6" r="1"/><circle cx="16" cy="6" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="8" cy="18" r="1"/><circle cx="16" cy="18" r="1"/></>,
   external: <><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></>,
   paperclip: <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9"/>,
   sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></>,
