@@ -17,8 +17,23 @@ export type AiRun={id:string;cardId:string;placementId:string;threadId:string|nu
 export type AppState = { workspaces: Workspace[]; boards: Board[]; columns: Column[]; cards: Card[]; placements: Placement[]; tags: Tag[]; cardTags: CardTag[]; links: CardLink[]; attachments: Attachment[]; tray: TrayItem[]; relations?: { id: string; cardId: string; relatedCardId: string }[]; boardMembers:{boardId:string;userId:string}[]; workspaceIntegrations:WorkspaceIntegration[];githubLinks:GithubLink[];aiRuns:AiRun[];memberOptions?:{id:string;name:string;email:string;workspaceIds:string[]}[]; authenticationDisabled:boolean; currentUser?:Omit<AppUser,"memberships"|"boardIds">; permissionsByWorkspace?:Record<string,string[]>; users?:AppUser[] };
 export type ActionResult = { ok?: boolean; error?: string; warning?: string; operationId?: string; undoId?: string; id?: string; [key: string]: unknown };
 
+async function request(path: string, init: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 25000);
+  try {
+    return await fetch(appPath(path), { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The server took too long to respond. Please try again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export async function readState(): Promise<AppState> {
-  const response = await fetch(appPath("/api/state"), { cache: "no-store" });
+  const response = await request("/api/state", { cache: "no-store" });
   if (response.status === 401) { window.location.assign(appPath('/login')); throw new Error('Please sign in.'); }
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Could not load your workspace.");
@@ -26,9 +41,14 @@ export async function readState(): Promise<AppState> {
 }
 
 export async function action(name: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
-  const response = await fetch(appPath("/api/actions"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: name, ...payload }) });
+  const response = await request("/api/actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: name, ...payload }) });
   if (response.status === 401) { window.location.assign(appPath('/login')); throw new Error('Please sign in.'); }
   const data = await response.json();
   if (!response.ok || data.error) throw new Error(data.error || "This change could not be saved.");
   return data;
+}
+
+export async function signOut() {
+  const response = await request("/api/auth/logout", { method: "POST" });
+  if (!response.ok) throw new Error("Could not sign out. Please try again.");
 }

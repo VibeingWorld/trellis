@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from "react";
 import CardDetail from "@/components/card/CardDetail";
 import { appPath } from "@/lib/app-path";
-import { action, readState, type AppState, type AppUser, type Board, type Column, type Placement, type TrayItem } from "./api";
+import { action, readState, signOut, type AppState, type AppUser, type Board, type Column, type Placement, type TrayItem } from "./api";
 import { CalendarPanel } from "./CalendarPanel";
 import { Icon } from "./Icon";
 
@@ -53,12 +53,20 @@ export default function BoardApp() {
   const [activeTrayItem, setActiveTrayItem] = useState<string | null>(null);
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null);
   const mutationLock = useRef(false);
+  const refreshLock = useRef(false);
+  const interactionLock = useRef(false);
   const deepLinkHandled = useRef(false);
 
   const refresh = useCallback(async () => {
-    const next = await readState();
-    setState(next);
-    setLoadError("");
+    if (refreshLock.current) return;
+    refreshLock.current = true;
+    try {
+      const next = await readState();
+      setState(next);
+      setLoadError("");
+    } finally {
+      refreshLock.current = false;
+    }
   }, []);
 
   useEffect(() => {
@@ -67,9 +75,24 @@ export default function BoardApp() {
     setActiveWorkspaceId(localStorage.getItem("cove.workspace") || "");
     if (window.innerWidth <= 800) { setTrayOpen(false); setCalendarOpen(false); }
     refresh().catch((error: Error) => setLoadError(error.message));
-    const onFocus = () => { refresh().catch(() => {}); };
+    const sync = () => {
+      if (document.visibilityState === "visible" && !mutationLock.current && !interactionLock.current) refresh().catch(() => {});
+    };
+    const onFocus = () => sync();
+    const onDragStart = () => { interactionLock.current = true; };
+    const onDragEnd = () => { interactionLock.current = false; sync(); };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", sync);
+    document.addEventListener("dragstart", onDragStart);
+    document.addEventListener("dragend", onDragEnd);
+    const interval = window.setInterval(sync, 5000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", sync);
+      document.removeEventListener("dragstart", onDragStart);
+      document.removeEventListener("dragend", onDragEnd);
+      window.clearInterval(interval);
+    };
   }, [refresh]);
 
   useEffect(() => {
@@ -247,7 +270,7 @@ export default function BoardApp() {
     </aside>
 
     <main className="main-shell">
-      <header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Icon name="menu" /></button><Icon name="folder" size={16} /><span>{workspace?.name || "Workspace"}</span><span className="breadcrumb-divider">/</span><strong>{board?.name || "Boards"}</strong></div><div className="topbar-right"><span className="local-pill"><span />{busy ? "Saving your changes…" : "All changes saved locally"}</span><div className="panel-toggles"><button className={`icon-button tray-toggle ${trayOpen ? "active" : ""}`} title={trayOpen ? "Hide card tray" : "Show card tray"} aria-label={trayOpen ? "Hide card tray" : "Show card tray"} onClick={() => { const opening = !trayOpen; setTrayOpen(opening); if (opening && window.innerWidth <= 800) setCalendarOpen(false); }}><Icon name="tray" size={19} />{trayItems.length > 0 && <b>{trayItems.length}</b>}</button><button className={`icon-button tray-toggle ${calendarOpen ? "active" : ""}`} title={calendarOpen ? "Hide calendar" : "Show calendar"} aria-label={calendarOpen ? "Hide calendar" : "Show calendar"} onClick={() => { const opening = !calendarOpen; setCalendarOpen(opening); if (opening && window.innerWidth <= 800) setTrayOpen(false); }}><Icon name="calendar" size={19} /></button></div></div></header>
+      <header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Icon name="menu" /></button><Icon name="folder" size={16} /><span>{workspace?.name || "Workspace"}</span><span className="breadcrumb-divider">/</span><strong>{board?.name || "Boards"}</strong></div><div className="topbar-right"><span className="local-pill"><span />{busy ? "Saving your changes…" : "Synced with your server"}</span><div className="panel-toggles"><button className={`icon-button tray-toggle ${trayOpen ? "active" : ""}`} title={trayOpen ? "Hide card tray" : "Show card tray"} aria-label={trayOpen ? "Hide card tray" : "Show card tray"} onClick={() => { const opening = !trayOpen; setTrayOpen(opening); if (opening && window.innerWidth <= 800) setCalendarOpen(false); }}><Icon name="tray" size={19} />{trayItems.length > 0 && <b>{trayItems.length}</b>}</button><button className={`icon-button tray-toggle ${calendarOpen ? "active" : ""}`} title={calendarOpen ? "Hide calendar" : "Show calendar"} aria-label={calendarOpen ? "Hide calendar" : "Show calendar"} onClick={() => { const opening = !calendarOpen; setCalendarOpen(opening); if (opening && window.innerWidth <= 800) setTrayOpen(false); }}><Icon name="calendar" size={19} /></button></div></div></header>
       <div className="board-and-tray">
         <section className={`board-surface ${board?.background === "midnight" || board?.background === "#253b42" ? "dark-board" : ""}`} style={boardStyle(board?.background)}>
           {board ? <>
@@ -444,6 +467,6 @@ function AccountDialog({state,busy,onClose,onSubmit}:{state:AppState;busy:boolea
         <button className="button primary" disabled={busy||!name.trim()||!email.trim()||(!selected&&password.length<12)}>{busy?"Saving…":selected?"Save account":"Create account"}</button>
       </form>
     </div>}
-    <div className="account-footer">{state.authenticationDisabled?<small>Direct administrator access is enabled on this server.</small>:<button className="button secondary" onClick={async()=>{await fetch(appPath('/api/auth/logout'),{method:'POST'});window.location.assign(appPath('/login'));}}>Sign out</button>}</div>
+    <div className="account-footer">{state.authenticationDisabled?<small>Direct administrator access is enabled on this server.</small>:<button className="button secondary" onClick={async()=>{try{await signOut();window.location.assign(appPath('/login'));}catch(error){window.alert(error instanceof Error?error.message:'Could not sign out.');}}}>Sign out</button>}</div>
   </Modal>;
 }
