@@ -6,9 +6,9 @@ import path from 'node:path';
 async function main() {
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'trellis-data-test-'));
   process.env.DATA_DIR=temp;
-  const {mutate,getState}=await import('../src/lib/store');
+  const {mutate,getState,getPublicBoardState}=await import('../src/lib/store');
   const {sqlite}=await import('../src/db');
-  const {createFirstAdmin,getSessionUser}=await import('../src/lib/auth');
+  const {createFirstAdmin,createManagedUser,getSessionUser}=await import('../src/lib/auth');
   const act=(action:string,payload:Record<string,unknown>={})=>mutate({action,...payload}) as Record<string,any>;
   try {
     const workspace=act('createWorkspace',{name:'Integration tests'}).id;
@@ -63,13 +63,38 @@ async function main() {
     assert.throws(()=>act('updateCard',{id:c.id,title:'Stale',version:saved.version-1}),/changed/);
     assert.equal(sqlite.pragma('integrity_check',{simple:true}),'ok');
     assert.equal(getSessionUser(undefined),null,'Login is required by default');
-    await createFirstAdmin({email:'owner@example.com',name:'Owner',password:'correct horse battery staple'});
+    const admin=await createFirstAdmin({email:'owner@example.com',name:'Owner',password:'correct horse battery staple'});
+    const privateBoard=(mutate({action:'createBoard',workspaceId:workspace,name:'Access-controlled'},admin) as Record<string,any>).id;
+    const privateColumn=getState(admin).columns.find(column=>column.boardId===privateBoard)!.id;
+    mutate({action:'createCard',columnId:privateColumn,title:'Visible by policy'},admin);
+    const memberId=(await createManagedUser({email:'member@example.com',name:'Member',password:'member password is secure',role:'member',permissionsByWorkspace:{[workspace]:['read','editCard']}},admin)).id;
+    const outsiderId=(await createManagedUser({email:'outsider@example.com',name:'Outsider',password:'outsider password secure',role:'member',permissionsByWorkspace:{[workspace]:['read','editCard']}},admin)).id;
+    const member={id:memberId,email:'member@example.com',name:'Member',role:'member' as const,active:true};
+    const outsider={id:outsiderId,email:'outsider@example.com',name:'Outsider',role:'member' as const,active:true};
+    assert.equal(getState(member).boards.some(board=>board.id===privateBoard),false,'Private boards stay owner-only');
+    mutate({action:'updateBoard',id:privateBoard,name:'Access-controlled',visibility:'members',memberIds:[memberId]},admin);
+    assert.equal(getState(member).boards.some(board=>board.id===privateBoard),true,'Selected members can view the board');
+    assert.equal(getState(outsider).boards.some(board=>board.id===privateBoard),false,'Unselected accounts cannot view member boards');
+    mutate({action:'updateBoard',id:privateBoard,name:'Access-controlled',visibility:'public',memberIds:[]},admin);
+    assert.equal(getPublicBoardState(privateBoard).cards.length,1,'Public read-only state contains the board cards');
+    assert.throws(()=>mutate({action:'updateBoard',id:privateBoard,name:'Not allowed'},outsider),/access to this board/,'Public visibility does not grant write access');
+    mutate({action:'updateBoard',id:privateBoard,name:'Access-controlled',visibility:'private',memberIds:[]},admin);
+    assert.throws(()=>getPublicBoardState(privateBoard),/private/,'Private boards cannot use the public view');
+    const boardOnlyId=(mutate({action:'createBoard',workspaceId:workspace,name:'Board-only access'},admin) as Record<string,any>).id;
+    const boardOnlyColumn=getState(admin).columns.find(column=>column.boardId===boardOnlyId)!.id;
+    const boardOnlyUserId=(await createManagedUser({email:'board-only@example.com',name:'Board only',password:'board only secure password',role:'member',permissionsByWorkspace:{},boardIds:[boardOnlyId]},admin)).id;
+    const boardOnlyUser={id:boardOnlyUserId,email:'board-only@example.com',name:'Board only',role:'member' as const,active:true};
+    const boardOnlyState=getState(boardOnlyUser);
+    assert.deepEqual(boardOnlyState.boards.map(board=>board.id),[boardOnlyId],'An account outside every workspace can see only its assigned board');
+    assert.equal(boardOnlyState.workspaces.some(item=>item.id===workspace),true,'Board-only access includes just enough workspace context to display the board');
+    assert.deepEqual(boardOnlyState.permissionsByWorkspace?.[workspace],[],'Board-only access grants no workspace editing permissions');
+    assert.throws(()=>mutate({action:'createCard',columnId:boardOnlyColumn,title:'Not allowed'},boardOnlyUser),/permission/,'Board-only access is read-only without explicit workspace permissions');
     process.env.COVE_DISABLE_AUTH='1';
     assert.equal(getSessionUser(undefined)?.email,'owner@example.com','Disabled auth uses the first active administrator');
     delete process.env.COVE_DISABLE_AUTH;
     sqlite.pragma('wal_checkpoint(TRUNCATE)');
     assert.ok(fs.statSync(path.join(temp,'trellis.sqlite')).size>0);
-    console.log('PASS: persistence, calendar dates, links, shared content, tray safety, idempotent retry, WIP limits, undo, workspace boundaries, stale conflicts, URL validation, auth bypass, SQLite integrity.');
+    console.log('PASS: persistence, calendar dates, links, shared content, tray safety, idempotent retry, WIP limits, undo, workspace boundaries, stale conflicts, URL validation, board privacy, selected members, board-only accounts, public read-only access, auth bypass, SQLite integrity.');
   } finally {sqlite.close();fs.rmSync(temp,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

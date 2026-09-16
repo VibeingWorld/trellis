@@ -89,11 +89,23 @@ function saveMemberships(userId:string,value:unknown){
     if(permissions.length)insert.run(userId,workspaceId,JSON.stringify([...new Set(permissions)]));
   }
 }
+function saveBoardMemberships(userId:string,value:unknown){
+  if(!Array.isArray(value))throw new AppError('Invalid board access.');
+  const boardIds=[...new Set(value.filter((item):item is string=>typeof item==='string'))];
+  sqlite.prepare('DELETE FROM board_members WHERE user_id=?').run(userId);
+  const insert=sqlite.prepare('INSERT INTO board_members (board_id,user_id) VALUES (?,?)');
+  for(const boardId of boardIds){
+    const board=sqlite.prepare('SELECT id,visibility,owner_user_id FROM boards WHERE id=?').get(boardId) as {id:string;visibility:string;owner_user_id:string|null}|undefined;
+    if(!board||board.owner_user_id===userId)continue;
+    insert.run(board.id,userId);
+    if(board.visibility==='private')sqlite.prepare("UPDATE boards SET visibility='members' WHERE id=?").run(board.id);
+  }
+}
 export async function createManagedUser(input:Record<string,unknown>,actor:SessionUser){
   requireAdmin(actor);const email=normalizeEmail(input.email),name=cleanName(input.name),role=cleanRole(input.role||'member');
   if(sqlite.prepare('SELECT 1 FROM users WHERE email=?').get(email))throw new AppError('An account already uses that email.',409);
   const password=await passwordRecord(input.password),id=randomUUID(),now=Date.now();
-  sqlite.transaction(()=>{sqlite.prepare('INSERT INTO users (id,email,name,password_hash,password_salt,role,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)').run(id,email,name,password.hash,password.salt,role,now,now);saveMemberships(id,input.permissionsByWorkspace||{});}).immediate();
+  sqlite.transaction(()=>{sqlite.prepare('INSERT INTO users (id,email,name,password_hash,password_salt,role,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)').run(id,email,name,password.hash,password.salt,role,now,now);saveMemberships(id,input.permissionsByWorkspace||{});if(role==='member')saveBoardMemberships(id,input.boardIds||[]);}).immediate();
   return{id};
 }
 export async function updateManagedUser(input:Record<string,unknown>,actor:SessionUser){
@@ -101,6 +113,6 @@ export async function updateManagedUser(input:Record<string,unknown>,actor:Sessi
   const role=cleanRole(input.role),active=input.active!==false,name=cleanName(input.name),email=normalizeEmail(input.email);
   if((existing.role==='admin'&&(role!=='admin'||!active))&&Number((sqlite.prepare("SELECT count(*) n FROM users WHERE role='admin' AND active=1").get() as {n:number}).n)<=1)throw new AppError('Keep at least one active admin account.',409);
   const password=input.password?await passwordRecord(input.password):null,now=Date.now();
-  sqlite.transaction(()=>{if(password)sqlite.prepare('UPDATE users SET email=?,name=?,role=?,active=?,password_hash=?,password_salt=?,updated_at=? WHERE id=?').run(email,name,role,active?1:0,password.hash,password.salt,now,input.id);else sqlite.prepare('UPDATE users SET email=?,name=?,role=?,active=?,updated_at=? WHERE id=?').run(email,name,role,active?1:0,now,input.id);if(role==='member')saveMemberships(input.id as string,input.permissionsByWorkspace||{});else sqlite.prepare('DELETE FROM workspace_members WHERE user_id=?').run(input.id);if(!active)sqlite.prepare('DELETE FROM sessions WHERE user_id=?').run(input.id);}).immediate();
+  sqlite.transaction(()=>{if(password)sqlite.prepare('UPDATE users SET email=?,name=?,role=?,active=?,password_hash=?,password_salt=?,updated_at=? WHERE id=?').run(email,name,role,active?1:0,password.hash,password.salt,now,input.id);else sqlite.prepare('UPDATE users SET email=?,name=?,role=?,active=?,updated_at=? WHERE id=?').run(email,name,role,active?1:0,now,input.id);if(role==='member'){saveMemberships(input.id as string,input.permissionsByWorkspace||{});saveBoardMemberships(input.id as string,input.boardIds||[]);}else{sqlite.prepare('DELETE FROM workspace_members WHERE user_id=?').run(input.id);sqlite.prepare('DELETE FROM board_members WHERE user_id=?').run(input.id);}if(!active)sqlite.prepare('DELETE FROM sessions WHERE user_id=?').run(input.id);}).immediate();
   return{id:input.id};
 }

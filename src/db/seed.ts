@@ -6,7 +6,7 @@ export function seed(sqlite: Database.Database) {
     const now = Date.now();
     sqlite.prepare('INSERT INTO workspaces VALUES (?,?,?,?,?)').run('workspace-studio', 'Studio', 'S', '#7c68d8', now);
     sqlite.prepare('INSERT INTO workspaces VALUES (?,?,?,?,?)').run('workspace-personal', 'Personal', 'P', '#5aa59c', now);
-    const b = sqlite.prepare('INSERT INTO boards VALUES (?,?,?,?,?,?,?)');
+    const b = sqlite.prepare('INSERT INTO boards (id,workspace_id,name,description,background,favorite,created_at) VALUES (?,?,?,?,?,?,?)');
     b.run('board-product', 'workspace-studio', 'Product roadmap', 'A little clarity for the next big thing.', '#f2f3f7', 1, now);
     b.run('board-design', 'workspace-studio', 'Design studio', 'Ideas, explorations, and the details that make a difference.', '#f1f4f1', 1, now + 1);
     b.run('board-launch', 'workspace-studio', 'Launch checklist', 'Everything we need for a thoughtful launch.', '#f7f1eb', 0, now + 2);

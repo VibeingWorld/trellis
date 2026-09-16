@@ -12,7 +12,7 @@ const connections = globalDb.trellisConnections ??= new Map();
 const databasePath = path.join(dataDirectory, 'trellis.sqlite');
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT NOT NULL DEFAULT 'W', color TEXT NOT NULL DEFAULT '#8474eb', created_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', background TEXT NOT NULL DEFAULT '#eff2f5', favorite INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', background TEXT NOT NULL DEFAULT '#eff2f5', favorite INTEGER NOT NULL DEFAULT 0, visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private','members','public')), owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, name TEXT NOT NULL, position REAL NOT NULL, wip_limit INTEGER CHECK(wip_limit IS NULL OR wip_limit >= 1), limit_mode TEXT NOT NULL DEFAULT 'off' CHECK(limit_mode IN ('off','warning','strict')), color TEXT NOT NULL DEFAULT '#9299a5');
 CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), card_number INTEGER NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', cover TEXT, due_date TEXT, scheduled_start TEXT, scheduled_end TEXT, archived INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS placements (id TEXT PRIMARY KEY, card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, column_id TEXT NOT NULL REFERENCES columns(id) ON DELETE CASCADE, position REAL NOT NULL, version INTEGER NOT NULL DEFAULT 1, UNIQUE(card_id, board_id));
@@ -30,10 +30,12 @@ CREATE TABLE IF NOT EXISTS google_oauth_settings (id TEXT PRIMARY KEY, client_id
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('admin','member')), active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS workspace_members (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, permissions TEXT NOT NULL DEFAULT '[]', UNIQUE(user_id, workspace_id));
+CREATE TABLE IF NOT EXISTS board_members (board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, UNIQUE(board_id, user_id));
 CREATE INDEX IF NOT EXISTS placements_column_idx ON placements(column_id);
 CREATE INDEX IF NOT EXISTS boards_workspace_idx ON boards(workspace_id);
 CREATE INDEX IF NOT EXISTS cards_workspace_idx ON cards(workspace_id);
 CREATE INDEX IF NOT EXISTS sessions_token_idx ON sessions(token_hash);
+CREATE INDEX IF NOT EXISTS board_members_user_idx ON board_members(user_id);
 `;
 
 function addMissingColumns(connection: Database.Database) {
@@ -48,6 +50,13 @@ function addMissingColumns(connection: Database.Database) {
     for (const card of cards) { const number=(counters.get(card.workspace_id)||0)+1; counters.set(card.workspace_id,number); update.run(number,card.id); }
   }
   connection.exec('CREATE UNIQUE INDEX IF NOT EXISTS cards_workspace_number_idx ON cards(workspace_id, card_number)');
+  const boardColumns = new Set((connection.prepare('PRAGMA table_info(boards)').all() as { name: string }[]).map((column) => column.name));
+  if (!boardColumns.has('visibility')) connection.exec("ALTER TABLE boards ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
+  if (!boardColumns.has('owner_user_id')) connection.exec('ALTER TABLE boards ADD COLUMN owner_user_id TEXT');
+  connection.exec('CREATE TABLE IF NOT EXISTS board_members (board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, UNIQUE(board_id, user_id))');
+  connection.exec('CREATE INDEX IF NOT EXISTS board_members_user_idx ON board_members(user_id)');
+  const firstAdmin = connection.prepare("SELECT id FROM users WHERE role='admin' AND active=1 ORDER BY created_at LIMIT 1").get() as {id:string}|undefined;
+  if (firstAdmin) connection.prepare('UPDATE boards SET owner_user_id=? WHERE owner_user_id IS NULL').run(firstAdmin.id);
 }
 
 function retryBusy<T>(operation: () => T): T {

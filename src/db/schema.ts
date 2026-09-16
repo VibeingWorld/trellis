@@ -8,6 +8,7 @@ export const boards = sqliteTable('boards', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
   name: text('name').notNull(), description: text('description').notNull().default(''),
   background: text('background').notNull().default('#eff2f5'), favorite: integer('favorite', { mode: 'boolean' }).notNull().default(false),
+  visibility: text('visibility').notNull().default('private'), ownerUserId: text('owner_user_id'),
   createdAt: integer('created_at').notNull(),
 });
 export const columns = sqliteTable('columns', {
@@ -37,6 +38,10 @@ export const workspaceMembers = sqliteTable('workspace_members', {
   workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   permissions: text('permissions').notNull().default('[]'),
 }, (t) => [uniqueIndex('workspace_member_unique').on(t.userId, t.workspaceId)]);
+export const boardMembers = sqliteTable('board_members', {
+  boardId: text('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+}, (t) => [uniqueIndex('board_member_unique').on(t.boardId, t.userId)]);
 export const calendarConnections = sqliteTable('calendar_connections', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   provider: text('provider').notNull().default('google'), accessToken: text('access_token').notNull(), refreshToken: text('refresh_token'),

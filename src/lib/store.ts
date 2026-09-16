@@ -26,15 +26,46 @@ function capacity(column: Row, exclude?: string) {
 function safeUrl(value: unknown) {const result = str(value,'URL',2000);try{const u=new URL(result);if(!['https:','http:'].includes(u.protocol))throw new Error();return u.href;}catch{throw new AppError('Use a valid http or https link.');}}
 function safeBackground(value: unknown) {const v=str(value,'Background',2000);if(/^#[\da-f]{3,8}$/i.test(v)||/^(linear|radial)-gradient\([#\w\s.,%()+-]+\)$/.test(v)||/^\/api\/uploads\/[\w-]+$/.test(v))return v;throw new AppError('Choose a color, gradient, or uploaded image.');}
 function patch(table: string, id: string, fields: Row) {const entries=Object.entries(fields);if(!entries.length)return;sqlite.prepare(`UPDATE ${table} SET ${entries.map(([k])=>`${k}=?`).join(',')} WHERE id=?`).run(...entries.map(([,v])=>v),id);}
+function setBoardAccess(board:Row,visibilityValue:unknown,memberValue:unknown){
+  const visibility=String(visibilityValue);
+  if(!['private','members','public'].includes(visibility))throw new AppError('Choose a valid board visibility.');
+  const memberIds=Array.isArray(memberValue)?[...new Set(memberValue.filter((value:unknown):value is string=>typeof value==='string'))]:[];
+  for(const userId of memberIds){const account=sqlite.prepare('SELECT id,active FROM users WHERE id=?').get(userId) as Row|undefined;if(!account||!account.active)throw new AppError('Choose an active account.');}
+  sqlite.prepare('DELETE FROM board_members WHERE board_id=?').run(board.id);
+  if(visibility==='members'){const insert=sqlite.prepare('INSERT OR IGNORE INTO board_members (board_id,user_id) VALUES (?,?)');memberIds.filter(id=>id!==board.owner_user_id).forEach(id=>insert.run(board.id,id));}
+  return visibility;
+}
+function canWriteBoard(user:SessionUser,board:Row){return user.role==='admin'||board.owner_user_id===user.id||Boolean(sqlite.prepare('SELECT 1 FROM board_members WHERE board_id=? AND user_id=?').get(board.id,user.id));}
+function canReadBoard(user:SessionUser,board:Row){return board.visibility==='public'||canWriteBoard(user,board);}
+function requireBoardWrite(user:SessionUser,boardId:string){const board=row('boards',boardId);if(!canWriteBoard(user,board))throw new AppError('You do not have access to this board.',403);return board;}
+export function userCanReadBoard(user:SessionUser,boardId:string){const board=sqlite.prepare('SELECT id,visibility,owner_user_id FROM boards WHERE id=?').get(boardId) as Row|undefined;return Boolean(board&&canReadBoard(user,board));}
 export function getState(user?:SessionUser): AppState {
   const allWorkspaces=db.select().from(s.workspaces).all();
-  const workspaceIds=new Set(user&&user.role!=='admin'?(sqlite.prepare('SELECT workspace_id FROM workspace_members WHERE user_id=?').all(user.id) as {workspace_id:string}[]).filter(item=>permissionsFor(user,item.workspace_id).includes('read')).map(item=>item.workspace_id):allWorkspaces.map(item=>item.id));
-  const workspaces=allWorkspaces.filter(item=>workspaceIds.has(item.id)),boards=db.select().from(s.boards).all().filter(item=>workspaceIds.has(item.workspaceId)),boardIds=new Set(boards.map(item=>item.id)),cards=db.select().from(s.cards).all().filter(item=>workspaceIds.has(item.workspaceId)),cardIds=new Set(cards.map(item=>item.id));
-  const base={workspaces,boards,columns:db.select().from(s.columns).all().filter(item=>boardIds.has(item.boardId)),cards,placements:db.select().from(s.placements).all().filter(item=>boardIds.has(item.boardId)&&cardIds.has(item.cardId)),tags:db.select().from(s.tags).all().filter(item=>workspaceIds.has(item.workspaceId)),cardTags:db.select().from(s.cardTags).all().filter(item=>cardIds.has(item.cardId)),links:db.select().from(s.links).all().filter(item=>cardIds.has(item.cardId)),attachments:db.select().from(s.attachments).all().filter(item=>(item.cardId&&cardIds.has(item.cardId))||(item.boardId&&boardIds.has(item.boardId))),tray:db.select().from(s.tray).all().filter(item=>workspaceIds.has(item.workspaceId)),relations:db.select().from(s.relations).all().filter(item=>cardIds.has(item.cardId)&&cardIds.has(item.relatedCardId)),authenticationDisabled:isAuthenticationDisabled()};
+  const workspaceIds=new Set(user&&user.role!=='admin'?[...(sqlite.prepare('SELECT workspace_id FROM workspace_members WHERE user_id=?').all(user.id) as {workspace_id:string}[]).filter(item=>permissionsFor(user,item.workspace_id).includes('read')).map(item=>item.workspace_id),...(sqlite.prepare('SELECT DISTINCT b.workspace_id FROM board_members bm JOIN boards b ON b.id=bm.board_id WHERE bm.user_id=?').all(user.id) as {workspace_id:string}[]).map(item=>item.workspace_id)]:allWorkspaces.map(item=>item.id));
+  const workspaces=allWorkspaces.filter(item=>workspaceIds.has(item.id));
+  const boards=db.select().from(s.boards).all().filter(item=>workspaceIds.has(item.workspaceId)&&(!user||canReadBoard(user,{id:item.id,visibility:item.visibility,owner_user_id:item.ownerUserId})));
+  const boardIds=new Set(boards.map(item=>item.id));
+  const allPlacements=db.select().from(s.placements).all(),placements=allPlacements.filter(item=>boardIds.has(item.boardId));
+  const cardIds=new Set(placements.map(item=>item.cardId)),cards=db.select().from(s.cards).all().filter(item=>cardIds.has(item.id));
+  const boardMembers=db.select().from(s.boardMembers).all().filter(item=>boardIds.has(item.boardId));
+  const base={workspaces,boards,columns:db.select().from(s.columns).all().filter(item=>boardIds.has(item.boardId)),cards,placements,tags:db.select().from(s.tags).all().filter(item=>workspaceIds.has(item.workspaceId)),cardTags:db.select().from(s.cardTags).all().filter(item=>cardIds.has(item.cardId)),links:db.select().from(s.links).all().filter(item=>cardIds.has(item.cardId)),attachments:db.select().from(s.attachments).all().filter(item=>(item.cardId&&cardIds.has(item.cardId))||(item.boardId&&boardIds.has(item.boardId))),tray:db.select().from(s.tray).all().filter(item=>placements.some(p=>p.id===item.placementId)),relations:db.select().from(s.relations).all().filter(item=>cardIds.has(item.cardId)&&cardIds.has(item.relatedCardId)),boardMembers,authenticationDisabled:isAuthenticationDisabled()};
   if(!user)return base;
   const permissionsByWorkspace=Object.fromEntries(workspaces.map(item=>[item.id,permissionsFor(user,item.id)]));
-  const users=user.role==='admin'?(sqlite.prepare('SELECT id,email,name,role,active FROM users ORDER BY created_at').all() as {id:string;email:string;name:string;role:'admin'|'member';active:number}[]).map(item=>({...item,active:Boolean(item.active),memberships:(sqlite.prepare('SELECT workspace_id,permissions FROM workspace_members WHERE user_id=?').all(item.id) as {workspace_id:string;permissions:string}[]).map(member=>({workspaceId:member.workspace_id,permissions:JSON.parse(member.permissions)}))})):undefined;
-  return {...base,currentUser:{id:user.id,email:user.email,name:user.name,role:user.role,active:user.active},permissionsByWorkspace,users};
+  const users=user.role==='admin'?(sqlite.prepare('SELECT id,email,name,role,active FROM users ORDER BY created_at').all() as {id:string;email:string;name:string;role:'admin'|'member';active:number}[]).map(item=>({...item,active:Boolean(item.active),memberships:(sqlite.prepare('SELECT workspace_id,permissions FROM workspace_members WHERE user_id=?').all(item.id) as {workspace_id:string;permissions:string}[]).map(member=>({workspaceId:member.workspace_id,permissions:JSON.parse(member.permissions)})),boardIds:(sqlite.prepare('SELECT board_id FROM board_members WHERE user_id=?').all(item.id) as {board_id:string}[]).map(member=>member.board_id)})):undefined;
+  const memberOptions=users?.filter(item=>item.active).map(item=>({id:item.id,name:item.name,email:item.email,workspaceIds:workspaces.map(workspace=>workspace.id)}));
+  return {...base,currentUser:{id:user.id,email:user.email,name:user.name,role:user.role,active:user.active},permissionsByWorkspace,users,memberOptions};
+}
+export function getPublicBoardState(boardId:string){
+  const board=db.select().from(s.boards).all().find(item=>item.id===boardId);
+  if(!board||board.visibility!=='public')throw new AppError('This board is private.',404);
+  const workspace=db.select().from(s.workspaces).all().find(item=>item.id===board.workspaceId)!;
+  const columns=db.select().from(s.columns).all().filter(item=>item.boardId===board.id);
+  const placements=db.select().from(s.placements).all().filter(item=>item.boardId===board.id);
+  const cardIds=new Set(placements.map(item=>item.cardId));
+  const cards=db.select().from(s.cards).all().filter(item=>cardIds.has(item.id)&&!item.archived);
+  const visibleIds=new Set(cards.map(item=>item.id));
+  const tags=db.select().from(s.tags).all().filter(item=>item.workspaceId===workspace.id);
+  return {workspace,board,columns,cards,placements:placements.filter(item=>visibleIds.has(item.cardId)),tags,cardTags:db.select().from(s.cardTags).all().filter(item=>visibleIds.has(item.cardId))};
 }
 function saveUndo(payload: Row) {const id=uid();sqlite.prepare('INSERT INTO undo_operations (id,payload) VALUES (?,?)').run(id,JSON.stringify(payload));return id;}
 function relocate(p: Row, column: Row, data: Row, link=false) {
@@ -47,13 +78,14 @@ function relocate(p: Row, column: Row, data: Row, link=false) {
   patch('placements',p.id,{board_id:column.board_id,column_id:column.id,position:targetPosition,version:p.version+1});
   return {id:p.id,warning,undoId:saveUndo({kind:'move',placementId:p.id,previous:p,expectedVersion:p.version+1})};
 }
-function perform(data: Row): Row {
+function perform(data: Row,user?:SessionUser): Row {
   const now=Date.now();
   switch(data.action){
     case 'createWorkspace': {const id=uid(),name=str(data.name);sqlite.prepare('INSERT INTO workspaces (id,name,icon,color,created_at) VALUES (?,?,?,?,?)').run(id,name,name.charAt(0).toUpperCase(),'#8474eb',now);return{id};}
     case 'updateWorkspace': {const w=row('workspaces',data.id);patch('workspaces',w.id,{name:str(data.name)});return{id:w.id};}
-    case 'createBoard': {row('workspaces',data.workspaceId);const id=uid();sqlite.prepare('INSERT INTO boards (id,workspace_id,name,description,background,created_at) VALUES (?,?,?,?,?,?)').run(id,data.workspaceId,str(data.name),data.description===undefined?'':optionalText(data.description),data.background===undefined?'#f2f3f7':safeBackground(data.background),now);const insert=sqlite.prepare('INSERT INTO columns (id,board_id,name,position,color) VALUES (?,?,?,?,?)');['To do','In progress','Done'].forEach((name,i)=>insert.run(uid(),id,name,i,['#a1a8b8','#9579dc','#68af93'][i]));return{id};}
-    case 'updateBoard': {const b=row('boards',data.id),f:Row={};if(data.name!==undefined)f.name=str(data.name);if(data.description!==undefined)f.description=optionalText(data.description);if(data.background!==undefined)f.background=safeBackground(data.background);if(data.favorite!==undefined)f.favorite=data.favorite?1:0;patch('boards',b.id,f);return{id:b.id};}
+    case 'createBoard': {row('workspaces',data.workspaceId);const id=uid();sqlite.prepare('INSERT INTO boards (id,workspace_id,name,description,background,visibility,owner_user_id,created_at) VALUES (?,?,?,?,?,?,?,?)').run(id,data.workspaceId,str(data.name),data.description===undefined?'':optionalText(data.description),data.background===undefined?'#f2f3f7':safeBackground(data.background),'private',user?.id||null,now);const insert=sqlite.prepare('INSERT INTO columns (id,board_id,name,position,color) VALUES (?,?,?,?,?)');['To do','In progress','Done'].forEach((name,i)=>insert.run(uid(),id,name,i,['#a1a8b8','#9579dc','#68af93'][i]));return{id};}
+    case 'updateBoard': {const b=row('boards',data.id),f:Row={};if(data.name!==undefined)f.name=str(data.name);if(data.description!==undefined)f.description=optionalText(data.description);if(data.background!==undefined)f.background=safeBackground(data.background);if(data.favorite!==undefined)f.favorite=data.favorite?1:0;if(data.visibility!==undefined)f.visibility=setBoardAccess(b,data.visibility,data.memberIds);patch('boards',b.id,f);return{id:b.id};}
+    case 'updateBoardAccess': {const b=row('boards',data.id),visibility=setBoardAccess(b,data.visibility,data.memberIds);patch('boards',b.id,{visibility});return{id:b.id};}
     case 'moveBoardWorkspace': {const b=row('boards',data.id),target=row('workspaces',data.workspaceId);if(b.workspace_id===target.id)return{id:b.id};const shared=sqlite.prepare('SELECT c.id,c.title FROM placements p JOIN cards c ON c.id=p.card_id WHERE p.board_id=? AND EXISTS(SELECT 1 FROM placements p2 WHERE p2.card_id=p.card_id AND p2.board_id!=?) LIMIT 1').get(b.id,b.id) as Row|undefined;if(shared)throw new AppError(`“${shared.title}” also appears on another board. Remove shared appearances before moving this board.`,409);const cardIds=(sqlite.prepare('SELECT DISTINCT card_id id FROM placements WHERE board_id=?').all(b.id) as {id:string}[]).map(item=>item.id);for(const cardId of cardIds){sqlite.prepare('DELETE FROM card_tags WHERE card_id=?').run(cardId);sqlite.prepare('DELETE FROM relations WHERE card_id=? OR related_card_id=?').run(cardId,cardId);patch('cards',cardId,{workspace_id:target.id,card_number:Number((sqlite.prepare('SELECT coalesce(max(card_number),0)+1 n FROM cards WHERE workspace_id=?').get(target.id) as Row).n)});sqlite.prepare('UPDATE tray SET workspace_id=? WHERE placement_id IN (SELECT id FROM placements WHERE card_id=?)').run(target.id,cardId);}patch('boards',b.id,{workspace_id:target.id});return{id:b.id,workspaceId:target.id};}
     case 'deleteBoard': {const b=row('boards',data.id);sqlite.prepare('DELETE FROM tray WHERE placement_id IN (SELECT id FROM placements WHERE board_id=?)').run(b.id);sqlite.prepare('DELETE FROM boards WHERE id=?').run(b.id);sqlite.prepare('UPDATE cards SET archived=1,version=version+1,updated_at=? WHERE workspace_id=? AND NOT EXISTS(SELECT 1 FROM placements WHERE card_id=cards.id)').run(now,b.workspace_id);return{};}
     case 'createColumn': {row('boards',data.boardId);const id=uid(),n=(sqlite.prepare('SELECT coalesce(max(position),-1)+1 n FROM columns WHERE board_id=?').get(data.boardId) as Row).n;sqlite.prepare('INSERT INTO columns VALUES (?,?,?,?,?,?,?)').run(id,data.boardId,str(data.name),position(data.position,n),data.wipLimit===undefined?null:limit(data.wipLimit),data.limitMode===undefined?'off':mode(data.limitMode),data.color===undefined?'#a1a8b8':safeBackground(data.color));return{id};}
@@ -86,7 +118,7 @@ function workspaceForAction(data:Row):string {
   const action=String(data.action||'');
   if(['createBoard','createTag'].includes(action))return row('workspaces',data.workspaceId).id;
   if(['updateWorkspace'].includes(action))return row('workspaces',data.id).id;
-  if(['updateBoard','deleteBoard','moveBoardWorkspace'].includes(action))return row('boards',data.id).workspace_id;
+  if(['updateBoard','updateBoardAccess','deleteBoard','moveBoardWorkspace'].includes(action))return row('boards',data.id).workspace_id;
   if(action==='createColumn')return row('boards',data.boardId).workspace_id;
   if(['updateColumn','deleteColumn'].includes(action))return row('boards',row('columns',data.id).board_id).workspace_id;
   if(action==='createCard')return row('boards',row('columns',data.columnId).board_id).workspace_id;
@@ -102,16 +134,38 @@ function workspaceForAction(data:Row):string {
   if(action==='undo'){const op=row('undo_operations',data.id),payload=JSON.parse(op.payload),placement=row('placements',payload.placementId);return row('cards',placement.card_id).workspace_id;}
   throw new AppError('Unknown action.');
 }
+function boardIdsForAction(data:Row):string[]{
+  const action=String(data.action||'');
+  if(['updateBoard','updateBoardAccess','deleteBoard','moveBoardWorkspace'].includes(action))return[row('boards',data.id).id];
+  if(action==='createColumn')return[row('boards',data.boardId).id];
+  if(['updateColumn','deleteColumn'].includes(action))return[row('columns',data.id).board_id];
+  if(action==='createCard')return[row('columns',data.columnId).board_id];
+  if(['updateCard','deleteCard','toggleTag','addLink','addRelation'].includes(action))return(sqlite.prepare('SELECT board_id FROM placements WHERE card_id=?').all(data.id||data.cardId) as {board_id:string}[]).map(item=>item.board_id);
+  if(['movePlacement','linkPlacement'].includes(action))return[ row('placements',data.placementId).board_id,row('columns',data.columnId).board_id ];
+  if(['addToTray'].includes(action))return[row('placements',data.placementId).board_id];
+  if(action==='removePlacement')return[row('placements',data.id).board_id];
+  if(action==='dropTray')return[row('placements',row('tray',data.id).placement_id).board_id,row('columns',data.columnId).board_id];
+  if(['updateTray','removeFromTray'].includes(action))return[row('placements',row('tray',data.id).placement_id).board_id];
+  if(action==='deleteLink')return(sqlite.prepare('SELECT board_id FROM placements WHERE card_id=?').all(row('links',data.id).card_id) as {board_id:string}[]).map(item=>item.board_id);
+  if(action==='deleteRelation')return(sqlite.prepare('SELECT board_id FROM placements WHERE card_id=?').all(row('relations',data.id).card_id) as {board_id:string}[]).map(item=>item.board_id);
+  if(action==='deleteAttachment'){const attachment=row('attachments',data.id);return attachment.board_id?[attachment.board_id]:(sqlite.prepare('SELECT board_id FROM placements WHERE card_id=?').all(attachment.card_id) as {board_id:string}[]).map(item=>item.board_id);}
+  if(action==='undo'){const payload=JSON.parse(row('undo_operations',data.id).payload);return[row('placements',payload.placementId).board_id];}
+  return[];
+}
 function authorizeMutation(data:Row,user?:SessionUser){
   if(!user)return;
   const action=String(data.action||'');
   if(action==='createWorkspace'){if(user.role!=='admin')throw new AppError('Only an admin can create workspaces.',403);return;}
   const workspaceId=workspaceForAction(data);
+  const boardIds=[...new Set(boardIdsForAction(data))];
+  if(boardIds.length&&!boardIds.some(boardId=>canWriteBoard(user,row('boards',boardId))))throw new AppError('You do not have access to this board.',403);
+  if(['movePlacement','linkPlacement','dropTray'].includes(action))boardIds.forEach(boardId=>requireBoardWrite(user,boardId));
+  if(action==='updateBoardAccess'||(action==='updateBoard'&&data.visibility!==undefined)){const board=row('boards',data.id);if(user.role!=='admin'&&board.owner_user_id!==user.id)throw new AppError('Only the board owner or an admin can change access.',403);}
   const permission:Permission = ['createBoard'].includes(action)?'createBoard':
     ['createColumn','updateColumn','deleteColumn'].includes(action)?'createColumn':
     ['createCard'].includes(action)?'createCard':
     ['movePlacement','linkPlacement','addToTray','updateTray','removeFromTray','dropTray','removePlacement','undo'].includes(action)?'moveCard':
-    ['updateWorkspace','updateBoard','deleteBoard','moveBoardWorkspace'].includes(action)?'manageWorkspace':
+    ['updateWorkspace','updateBoard','updateBoardAccess','deleteBoard','moveBoardWorkspace'].includes(action)?'manageWorkspace':
     ['deleteAttachment'].includes(action)?'uploadFiles':'editCard';
   requirePermission(user,workspaceId,permission);
   if(action==='moveBoardWorkspace')requirePermission(user,String(data.workspaceId),'manageWorkspace');
@@ -120,11 +174,11 @@ export function mutate(data: Row,user?:SessionUser) {
   return sqlite.transaction(() => {
     authorizeMutation(data,user);
     if(data.operationId){const id=str(data.operationId,'Operation ID',100),existing=sqlite.prepare('SELECT result FROM operations WHERE id=?').get(id) as Row|undefined;if(existing)return{ok:true,...JSON.parse(existing.result),state:getState(user)};}
-    const result=perform(data);
+    const result=perform(data,user);
     if(data.operationId)sqlite.prepare('INSERT INTO operations VALUES (?,?,?)').run(data.operationId,JSON.stringify(result),Date.now());
     return{ok:true,...result,state:getState(user)};
   }).immediate();
 }
 export function addAttachment(input: {id:string;cardId:string|null;boardId:string|null;name:string;mimeType:string;size:number},user?:SessionUser) {
- return sqlite.transaction(()=>{if(Boolean(input.cardId)===Boolean(input.boardId))throw new AppError('Choose one card or board for this attachment.');const workspaceId=input.cardId?activeCard(input.cardId).workspace_id:row('boards',input.boardId).workspace_id;if(user)requirePermission(user,workspaceId,'uploadFiles');const url=`/api/uploads/${input.id}`;sqlite.prepare('INSERT INTO attachments VALUES (?,?,?,?,?,?,?,?)').run(input.id,input.cardId,input.boardId,input.name,url,input.mimeType,input.size,Date.now());return{attachment:db.select().from(s.attachments).all().find(a=>a.id===input.id),state:getState(user)};}).immediate();
+ return sqlite.transaction(()=>{if(Boolean(input.cardId)===Boolean(input.boardId))throw new AppError('Choose one card or board for this attachment.');const workspaceId=input.cardId?activeCard(input.cardId).workspace_id:row('boards',input.boardId).workspace_id;if(user){requirePermission(user,workspaceId,'uploadFiles');const boardIds=input.boardId?[input.boardId]:(sqlite.prepare('SELECT board_id FROM placements WHERE card_id=?').all(input.cardId) as {board_id:string}[]).map(item=>item.board_id);if(!boardIds.some(boardId=>canWriteBoard(user,row('boards',boardId))))throw new AppError('You do not have access to this board.',403);}const url=`/api/uploads/${input.id}`;sqlite.prepare('INSERT INTO attachments VALUES (?,?,?,?,?,?,?,?)').run(input.id,input.cardId,input.boardId,input.name,url,input.mimeType,input.size,Date.now());return{attachment:db.select().from(s.attachments).all().find(a=>a.id===input.id),state:getState(user)};}).immediate();
 }
