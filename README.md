@@ -18,7 +18,7 @@ Uploaded images, PDFs, Office documents, text files, and ZIP archives live in `d
 
 Board settings can archive or permanently delete a board. Archived boards appear in the sidebar with a Restore action. Column settings can delete a column; when it contains active cards, choose another column on the same board to receive them. Strict work-in-progress limits still apply.
 
-Use **Create sticky notes board** in a workspace to make a shared ideas board. Members with workspace read access can see it; members with column editing permission can create, edit, and minimize notes. Each note can point to a regular board and column. Place cards from the tray onto a note by dragging or using **Place**, then use **Send cards** to link its cards to the chosen destination. The note keeps its card references, so changes to a card stay in sync.
+Use **Create sticky notes board** in a workspace to make a shared ideas board. Members with workspace read access can see it; members with column editing permission can create, edit, and minimize notes. Drag a note by its grip to arrange it on the shared pinboard; positions persist for everyone. The p5.js canvas adds a grid, destination links, and movement feedback. Each note can point to a regular board and column. Place cards from the tray onto a note by dragging or using **Place**, then use **Send cards** to link its cards to the chosen destination. The note keeps its card references, so changes to a card stay in sync.
 
 ## AI / MCP access
 
@@ -43,7 +43,6 @@ Every card also has a stable `/cards/{cardId}` URL under the configured base pat
 ## Checks
 
 - `npm run typecheck`
-- `npm run lint`
 - `npm test`
 - `npm run build`
 
