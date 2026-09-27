@@ -12,8 +12,8 @@ const connections = globalDb.trellisConnections ??= new Map();
 const databasePath = path.join(dataDirectory, 'trellis.sqlite');
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT NOT NULL DEFAULT 'W', color TEXT NOT NULL DEFAULT '#8474eb', created_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', background TEXT NOT NULL DEFAULT '#eff2f5', favorite INTEGER NOT NULL DEFAULT 0, visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private','members','public')), owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, name TEXT NOT NULL, position REAL NOT NULL, wip_limit INTEGER CHECK(wip_limit IS NULL OR wip_limit >= 1), limit_mode TEXT NOT NULL DEFAULT 'off' CHECK(limit_mode IN ('off','warning','strict')), color TEXT NOT NULL DEFAULT '#9299a5');
+CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', background TEXT NOT NULL DEFAULT '#eff2f5', favorite INTEGER NOT NULL DEFAULT 0, visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private','members','public')), owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL, kind TEXT NOT NULL DEFAULT 'kanban', archived INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, name TEXT NOT NULL, position REAL NOT NULL, wip_limit INTEGER CHECK(wip_limit IS NULL OR wip_limit >= 1), limit_mode TEXT NOT NULL DEFAULT 'off' CHECK(limit_mode IN ('off','warning','strict')), color TEXT NOT NULL DEFAULT '#9299a5', note_body TEXT NOT NULL DEFAULT '', minimized INTEGER NOT NULL DEFAULT 0, target_board_id TEXT, target_column_id TEXT);
 CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), card_number INTEGER NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', cover TEXT, due_date TEXT, scheduled_start TEXT, scheduled_end TEXT, archived INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS placements (id TEXT PRIMARY KEY, card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, column_id TEXT NOT NULL REFERENCES columns(id) ON DELETE CASCADE, position REAL NOT NULL, version INTEGER NOT NULL DEFAULT 1, UNIQUE(card_id, board_id));
 CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, color TEXT NOT NULL);
@@ -57,6 +57,13 @@ function addMissingColumns(connection: Database.Database) {
   const boardColumns = new Set((connection.prepare('PRAGMA table_info(boards)').all() as { name: string }[]).map((column) => column.name));
   if (!boardColumns.has('visibility')) connection.exec("ALTER TABLE boards ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
   if (!boardColumns.has('owner_user_id')) connection.exec('ALTER TABLE boards ADD COLUMN owner_user_id TEXT');
+  if (!boardColumns.has('kind')) connection.exec("ALTER TABLE boards ADD COLUMN kind TEXT NOT NULL DEFAULT 'kanban'");
+  if (!boardColumns.has('archived')) connection.exec('ALTER TABLE boards ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+  const columnColumns = new Set((connection.prepare('PRAGMA table_info(columns)').all() as { name: string }[]).map((column) => column.name));
+  if (!columnColumns.has('note_body')) connection.exec("ALTER TABLE columns ADD COLUMN note_body TEXT NOT NULL DEFAULT ''");
+  if (!columnColumns.has('minimized')) connection.exec('ALTER TABLE columns ADD COLUMN minimized INTEGER NOT NULL DEFAULT 0');
+  if (!columnColumns.has('target_board_id')) connection.exec('ALTER TABLE columns ADD COLUMN target_board_id TEXT');
+  if (!columnColumns.has('target_column_id')) connection.exec('ALTER TABLE columns ADD COLUMN target_column_id TEXT');
   connection.exec('CREATE TABLE IF NOT EXISTS board_members (board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, UNIQUE(board_id, user_id))');
   connection.exec('CREATE INDEX IF NOT EXISTS board_members_user_idx ON board_members(user_id)');
   const integrationColumns = new Set((connection.prepare('PRAGMA table_info(workspace_integrations)').all() as { name: string }[]).map((column) => column.name));

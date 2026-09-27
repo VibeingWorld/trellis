@@ -9,12 +9,15 @@ export const boards = sqliteTable('boards', {
   name: text('name').notNull(), description: text('description').notNull().default(''),
   background: text('background').notNull().default('#eff2f5'), favorite: integer('favorite', { mode: 'boolean' }).notNull().default(false),
   visibility: text('visibility').notNull().default('private'), ownerUserId: text('owner_user_id'),
+  kind: text('kind').notNull().default('kanban'), archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at').notNull(),
 });
 export const columns = sqliteTable('columns', {
   id: text('id').primaryKey(), boardId: text('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
   name: text('name').notNull(), position: real('position').notNull(),
   wipLimit: integer('wip_limit'), limitMode: text('limit_mode').notNull().default('off'), color: text('color').notNull().default('#9299a5'),
+  noteBody: text('note_body').notNull().default(''), minimized: integer('minimized', { mode: 'boolean' }).notNull().default(false),
+  targetBoardId: text('target_board_id'), targetColumnId: text('target_column_id'),
 });
 export const cards = sqliteTable('cards', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),

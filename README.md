@@ -14,6 +14,12 @@ For a trusted private deployment that should open directly as the first active a
 
 Uploaded images, PDFs, Office documents, text files, and ZIP archives live in `data/uploads`; back up that directory together with the database. Files can be dropped directly onto a card or into its details panel.
 
+## Boards and sticky notes
+
+Board settings can archive or permanently delete a board. Archived boards appear in the sidebar with a Restore action. Column settings can delete a column; when it contains active cards, choose another column on the same board to receive them. Strict work-in-progress limits still apply.
+
+Use **Create sticky notes board** in a workspace to make a shared ideas board. Members with workspace read access can see it; members with column editing permission can create, edit, and minimize notes. Each note can point to a regular board and column. Place cards from the tray onto a note by dragging or using **Place**, then use **Send cards** to link its cards to the chosen destination. The note keeps its card references, so changes to a card stay in sync.
+
 ## AI / MCP access
 
 The project includes a local MCP server and a project-level `.mcp.json`. Start it manually with `npm run mcp`, or let an MCP-capable client use the project configuration. It exposes scoped tools to list/read workspaces and boards and to create or update boards, columns, and cards.

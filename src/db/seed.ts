@@ -11,7 +11,7 @@ export function seed(sqlite: Database.Database) {
     b.run('board-design', 'workspace-studio', 'Design studio', 'Ideas, explorations, and the details that make a difference.', '#f1f4f1', 1, now + 1);
     b.run('board-launch', 'workspace-studio', 'Launch checklist', 'Everything we need for a thoughtful launch.', '#f7f1eb', 0, now + 2);
     b.run('board-personal', 'workspace-personal', 'Life, organized', 'Make room for what matters.', '#edf3f6', 0, now + 3);
-    const c = sqlite.prepare('INSERT INTO columns VALUES (?,?,?,?,?,?,?)');
+    const c = sqlite.prepare('INSERT INTO columns (id,board_id,name,position,wip_limit,limit_mode,color) VALUES (?,?,?,?,?,?,?)');
     const columnRows = [
       ['col-backlog','board-product','Backlog',0,null,'off','#a1a8b8'],
       ['col-progress','board-product','In progress',1,4,'strict','#9579dc'],
