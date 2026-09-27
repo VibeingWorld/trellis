@@ -100,10 +100,16 @@ async function main() {
     assert.equal(getState(boardOnlyUser).boards.some(board=>board.id===sticky),false,'Board-only accounts do not see unrelated sticky boards');
     const note=(mutate({action:'createNote',boardId:sticky,name:'Research',noteBody:'First thought'},admin) as Record<string,any>).id;
     assert.throws(()=>mutate({action:'updateNote',id:note,name:'Changed'},member),/permission/,'Workspace readers cannot edit notes without column permission');
-    mutate({action:'updateNote',id:note,targetBoardId:b,targetColumnId:cb,minimized:true,noteX:312,noteY:148},admin);
+    mutate({action:'updateNote',id:note,targetBoardId:b,targetColumnId:cb,minimized:true,noteX:312,noteY:148,color:'#d9e9f5'},admin);
     assert.equal(getState(admin).columns.find(column=>column.id===note)?.minimized,true,'Minimized state persists');
     assert.equal(getState(admin).columns.find(column=>column.id===note)?.noteX,312,'Shared note layout persists');
+    assert.equal(getState(admin).columns.find(column=>column.id===note)?.color,'#d9e9f5','Sticky note color persists');
+    mutate({action:'updateNote',id:note,noteLocked:true},admin);
+    assert.equal(getState(admin).columns.find(column=>column.id===note)?.noteLocked,true,'Pin state persists for the workspace');
+    assert.throws(()=>mutate({action:'updateNote',id:note,noteX:400,noteY:200},admin),/Unpin this note/,'Pinned notes cannot move through the API');
+    mutate({action:'updateNote',id:note,noteLocked:false},admin);
     assert.throws(()=>mutate({action:'updateNote',id:note,noteX:-3,noteY:8},admin),/valid note position/);
+    assert.throws(()=>mutate({action:'updateNote',id:note,color:'#000000'},admin),/sticky note color/);
     const noteCard=act('createCard',{columnId:ca,title:'Sticky card'});
     const noteTray=act('addToTray',{placementId:noteCard.placementId,mode:'link'}).id;
     act('dropTray',{id:noteTray,columnId:note});

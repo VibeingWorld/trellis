@@ -17,6 +17,7 @@ export const columns = sqliteTable('columns', {
   name: text('name').notNull(), position: real('position').notNull(),
   wipLimit: integer('wip_limit'), limitMode: text('limit_mode').notNull().default('off'), color: text('color').notNull().default('#9299a5'),
   noteBody: text('note_body').notNull().default(''), minimized: integer('minimized', { mode: 'boolean' }).notNull().default(false),
+  noteLocked: integer('note_locked', { mode: 'boolean' }).notNull().default(false),
   targetBoardId: text('target_board_id'), targetColumnId: text('target_column_id'),
   noteX: real('note_x'), noteY: real('note_y'),
 });
