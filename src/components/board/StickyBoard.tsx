@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent, type FormEvent, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type FormEvent, type PointerEvent } from "react";
 import type { ActionResult, AppState, Board, Column } from "./api";
 import { Icon } from "./Icon";
 import { PinboardCanvas, type Pin } from "./PinboardCanvas";
@@ -18,9 +18,12 @@ type ActiveDrag = { id: string; pointerId: number; pointerX: number; pointerY: n
 
 const defaultPoint = (index: number, columns: number): Point => ({ x: 30 + (index % columns) * 360, y: 30 + Math.floor(index / columns) * 360 });
 const clamp = (value: number, maximum: number) => Math.max(0, Math.min(maximum, value));
+const ZOOM_STEPS = [0.5, 0.65, 0.8, 1, 1.25, 1.5, 1.75, 2];
 
 export function StickyBoard({ board, state, notes, busy, canEdit, canMove, canManage, activeTrayItem, onSettings, onMutate, onPlaceTray, onOpenCard }: Props) {
-  const page = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const pendingZoom = useRef<{ x: number; y: number; focusX: number; focusY: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [space, setSpace] = useState({ width: 0, height: 0 });
   const [editing, setEditing] = useState<Column | "new" | null>(null);
   const [dropTarget, setDropTarget] = useState("");
@@ -35,20 +38,35 @@ export function StickyBoard({ board, state, notes, busy, canEdit, canMove, canMa
   const drag = useRef<ActiveDrag | null>(null);
   const suppressClick = useRef<{ id: string; until: number } | null>(null);
   useEffect(() => {
-    const element = page.current;
+    const element = viewport.current;
     if (!element) return;
-    const measure = () => {
-      const style = window.getComputedStyle(element);
-      setSpace({
-        width: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-        height: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - (canManage || canEdit ? 50 : 0),
-      });
-    };
+    const measure = () => setSpace({ width: element.clientWidth, height: element.clientHeight });
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     measure();
     return () => observer.disconnect();
-  }, [canEdit, canManage]);
+  }, []);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    const pending = pendingZoom.current;
+    if (!element || !pending) return;
+    element.scrollLeft = pending.x * zoom - pending.focusX;
+    element.scrollTop = pending.y * zoom - pending.focusY;
+    pendingZoom.current = null;
+  }, [zoom]);
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      if (event.deltaY === 0) return;
+      const next = clamp(Math.round((zoom + (event.deltaY < 0 ? 0.1 : -0.1)) * 100) / 100, 2);
+      changeZoom(Math.max(0.5, next), { x: event.clientX, y: event.clientY });
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [zoom]);
   const destinations = state.boards.filter(item => item.workspaceId === board.workspaceId && item.kind === "kanban" && !item.archived && (state.currentUser?.role === "admin" || item.ownerUserId === state.currentUser?.id || state.boardMembers.some(member => member.boardId === item.id && member.userId === state.currentUser?.id)));
   const columnsPerRow = Math.max(1, Math.floor((space.width - 20) / 360));
   const pins: Pin[] = notes.map((note, index) => ({
@@ -57,8 +75,25 @@ export function StickyBoard({ board, state, notes, busy, canEdit, canMove, canMa
     y: draftPoints[note.id]?.y ?? note.noteY ?? defaultPoint(index, columnsPerRow).y,
     targetBoardId: note.targetBoardId,
   }));
-  const stageWidth = Math.max(380, space.width, ...pins.map(pin => pin.x + 350));
-  const stageHeight = Math.max(800, space.height, ...pins.map(pin => pin.y + 390));
+  const stageWidth = Math.max(380, Math.ceil(space.width / zoom), ...pins.map(pin => pin.x + 350));
+  const stageHeight = Math.max(800, Math.ceil(space.height / zoom), ...pins.map(pin => pin.y + 390));
+  const zoomOut = ZOOM_STEPS.filter(step => step < zoom - 0.001).pop() ?? zoom;
+  const zoomIn = ZOOM_STEPS.find(step => step > zoom + 0.001) ?? zoom;
+
+  function changeZoom(next: number, focus?: Point) {
+    const element = viewport.current;
+    if (!element || next === zoom) return;
+    const bounds = element.getBoundingClientRect();
+    const focusX = focus ? focus.x - bounds.left : 0;
+    const focusY = focus ? focus.y - bounds.top : 0;
+    pendingZoom.current = {
+      x: (element.scrollLeft + focusX) / zoom,
+      y: (element.scrollTop + focusY) / zoom,
+      focusX,
+      focusY,
+    };
+    setZoom(next);
+  }
 
   function edit(note: Column | "new") {
     setEditing(note);
@@ -88,8 +123,8 @@ export function StickyBoard({ board, state, notes, busy, canEdit, canMove, canMa
   function moveDrag(event: PointerEvent<HTMLButtonElement>) {
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
-    const x = clamp(current.x + event.clientX - current.pointerX, 5000);
-    const y = clamp(current.y + event.clientY - current.pointerY, 5000);
+    const x = clamp(current.x + (event.clientX - current.pointerX) / zoom, 5000);
+    const y = clamp(current.y + (event.clientY - current.pointerY) / zoom, 5000);
     current.nextX = x;
     current.nextY = y;
     setDraftPoints(previous => ({ ...previous, [current.id]: { x, y } }));
@@ -118,9 +153,18 @@ export function StickyBoard({ board, state, notes, busy, canEdit, canMove, canMa
     } catch { /* An unrelated drag has no effect. */ }
   }
 
-  return <div className="sticky-page" ref={page}>
-    {(canManage || canEdit) && <div className="sticky-toolbar">{canManage && <button className="button secondary" onClick={onSettings}><Icon name="more" size={16} />Board settings</button>}{canEdit && <button className="button primary" onClick={() => edit("new")}><Icon name="plus" size={16} />New note</button>}</div>}
-    <div className="sticky-stage" role="region" aria-label={`${board.name} sticky notes area`} style={{ width: stageWidth, height: stageHeight }}>
+  return <div className="sticky-page">
+    <div className="sticky-toolbar">
+      <div className="sticky-zoom-controls" role="group" aria-label="Sticky notes zoom">
+        <button aria-label="Zoom out" title="Zoom out" disabled={zoom <= 0.5} onClick={() => changeZoom(zoomOut)}>−</button>
+        <button className="sticky-zoom-value" aria-label={`Reset zoom to 100% (currently ${Math.round(zoom * 100)}%)`} title="Reset zoom to 100%" onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button>
+        <button aria-label="Zoom in" title="Zoom in" disabled={zoom >= 2} onClick={() => changeZoom(zoomIn)}>+</button>
+      </div>
+      <div className="sticky-toolbar-actions">{canManage && <button className="button secondary" onClick={onSettings}><Icon name="more" size={16} />Board settings</button>}{canEdit && <button className="button primary" onClick={() => edit("new")}><Icon name="plus" size={16} />New note</button>}</div>
+    </div>
+    <div className="sticky-viewport" ref={viewport}>
+      <div className="sticky-zoom-space" style={{ width: stageWidth * zoom, height: stageHeight * zoom }}>
+        <div className="sticky-stage" role="region" aria-label={`${board.name} sticky notes area`} style={{ width: stageWidth, height: stageHeight, transform: `scale(${zoom})` }}>
       <PinboardCanvas width={stageWidth} height={stageHeight} pins={pins} draggingId={draggingId} />
       {notes.map((note, index) => {
         const pin = pins[index];
@@ -138,8 +182,10 @@ export function StickyBoard({ board, state, notes, busy, canEdit, canMove, canMa
         </article>;
       })}
       {canEdit && notes.length === 0 && <button className="sticky-add" style={{ left: 30, top: 30 }} onClick={() => edit("new")}><Icon name="plus" size={22} />Add a sticky note</button>}
+      {notes.length === 0 && !canEdit && <div className="sticky-empty">No notes yet.</div>}
+        </div>
+      </div>
     </div>
-    {notes.length === 0 && !canEdit && <div className="sticky-empty">No notes yet.</div>}
     {editing && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setEditing(null); }}>
       <div className="settings-modal sticky-editor" role="dialog" aria-modal="true" aria-label={editing === "new" ? "New sticky note" : "Edit sticky note"}>
         <div className="modal-heading"><div><h2>{editing === "new" ? "New sticky note" : "Edit sticky note"}</h2><p>Write an idea and choose where its cards belong.</p></div><button className="icon-button" aria-label="Close" onClick={() => setEditing(null)}><Icon name="close" /></button></div>
