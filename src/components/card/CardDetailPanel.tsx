@@ -98,8 +98,8 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
 
   async function save() {
     if(!onSave)return;
-    if (!title.trim()) {
-      setMessage("Give this card a title before saving.");
+    if (!title.trim() && !description.trim()) {
+      setMessage("Give this card a title or a body before saving.");
       return;
     }
     if (scheduledStart && scheduledEnd && new Date(scheduledEnd) <= new Date(scheduledStart)) {
@@ -155,7 +155,7 @@ export function CardDetailPanel({ open, card, onClose, onSave, onToggleTag, onCr
         <header className={styles.header}>
           <div className={styles.titleBlock}>
             <span className={styles.eyebrow}>{card.workspaceName ? `${card.workspaceName} · ` : ""}{card.cardNumber?`Card #${card.cardNumber}`:"Card details"}</span>
-            <input id={titleId} className={styles.titleInput} value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Card title" autoFocus disabled={!onSave}/>
+            <input id={titleId} className={styles.titleInput} value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Card title" placeholder="No title" autoFocus disabled={!onSave}/>
           </div>
           <button className={styles.iconButton} type="button" onClick={onClose} aria-label="Close card details"><Icon name="close" /></button>
         </header>

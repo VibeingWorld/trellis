@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import * as schema from './schema';
 import { seed } from './seed';
@@ -14,7 +15,7 @@ const schemaSql = `
 CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT NOT NULL DEFAULT 'W', color TEXT NOT NULL DEFAULT '#8474eb', created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', background TEXT NOT NULL DEFAULT '#eff2f5', favorite INTEGER NOT NULL DEFAULT 0, visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private','members','public')), owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL, kind TEXT NOT NULL DEFAULT 'kanban', archived INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, name TEXT NOT NULL, position REAL NOT NULL, wip_limit INTEGER CHECK(wip_limit IS NULL OR wip_limit >= 1), limit_mode TEXT NOT NULL DEFAULT 'off' CHECK(limit_mode IN ('off','warning','strict')), color TEXT NOT NULL DEFAULT '#9299a5', note_body TEXT NOT NULL DEFAULT '', minimized INTEGER NOT NULL DEFAULT 0, note_locked INTEGER NOT NULL DEFAULT 0, target_board_id TEXT, target_column_id TEXT, note_x REAL, note_y REAL);
-CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), card_number INTEGER NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', cover TEXT, due_date TEXT, scheduled_start TEXT, scheduled_end TEXT, archived INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), card_number INTEGER NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', cover TEXT, due_date TEXT, scheduled_start TEXT, scheduled_end TEXT, archived INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, is_note INTEGER NOT NULL DEFAULT 0, note_color TEXT, note_x REAL, note_y REAL, note_locked INTEGER NOT NULL DEFAULT 0, note_board_id TEXT);
 CREATE TABLE IF NOT EXISTS placements (id TEXT PRIMARY KEY, card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, column_id TEXT NOT NULL REFERENCES columns(id) ON DELETE CASCADE, position REAL NOT NULL, version INTEGER NOT NULL DEFAULT 1, UNIQUE(card_id, board_id));
 CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, color TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS card_tags (card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE, tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE, UNIQUE(card_id,tag_id));
@@ -53,6 +54,12 @@ function addMissingColumns(connection: Database.Database) {
     const update = connection.prepare('UPDATE cards SET card_number=? WHERE id=?');
     for (const card of cards) { const number=(counters.get(card.workspace_id)||0)+1; counters.set(card.workspace_id,number); update.run(number,card.id); }
   }
+  if (!names.has('is_note')) connection.exec('ALTER TABLE cards ADD COLUMN is_note INTEGER NOT NULL DEFAULT 0');
+  if (!names.has('note_color')) connection.exec('ALTER TABLE cards ADD COLUMN note_color TEXT');
+  if (!names.has('note_x')) connection.exec('ALTER TABLE cards ADD COLUMN note_x REAL');
+  if (!names.has('note_y')) connection.exec('ALTER TABLE cards ADD COLUMN note_y REAL');
+  if (!names.has('note_locked')) connection.exec('ALTER TABLE cards ADD COLUMN note_locked INTEGER NOT NULL DEFAULT 0');
+  if (!names.has('note_board_id')) connection.exec('ALTER TABLE cards ADD COLUMN note_board_id TEXT');
   connection.exec('CREATE UNIQUE INDEX IF NOT EXISTS cards_workspace_number_idx ON cards(workspace_id, card_number)');
   const boardColumns = new Set((connection.prepare('PRAGMA table_info(boards)').all() as { name: string }[]).map((column) => column.name));
   if (!boardColumns.has('visibility')) connection.exec("ALTER TABLE boards ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
@@ -67,6 +74,7 @@ function addMissingColumns(connection: Database.Database) {
   if (!columnColumns.has('target_column_id')) connection.exec('ALTER TABLE columns ADD COLUMN target_column_id TEXT');
   if (!columnColumns.has('note_x')) connection.exec('ALTER TABLE columns ADD COLUMN note_x REAL');
   if (!columnColumns.has('note_y')) connection.exec('ALTER TABLE columns ADD COLUMN note_y REAL');
+  migrateNoteColumns(connection);
   connection.exec('CREATE TABLE IF NOT EXISTS board_members (board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, UNIQUE(board_id, user_id))');
   connection.exec('CREATE INDEX IF NOT EXISTS board_members_user_idx ON board_members(user_id)');
   const integrationColumns = new Set((connection.prepare('PRAGMA table_info(workspace_integrations)').all() as { name: string }[]).map((column) => column.name));
@@ -75,6 +83,38 @@ function addMissingColumns(connection: Database.Database) {
   if (!runColumns.has('codex_thread_id')) connection.exec('ALTER TABLE ai_runs ADD COLUMN codex_thread_id TEXT');
   const firstAdmin = connection.prepare("SELECT id FROM users WHERE role='admin' AND active=1 ORDER BY created_at LIMIT 1").get() as {id:string}|undefined;
   if (firstAdmin) connection.prepare('UPDATE boards SET owner_user_id=? WHERE owner_user_id IS NULL').run(firstAdmin.id);
+}
+
+// Sticky notes used to be columns on a sticky board. Notes are now cards, so convert any leftovers once.
+function migrateNoteColumns(connection: Database.Database) {
+  type Legacy = { id: string; name: string; position: number; color: string; note_body: string; note_locked: number; target_board_id: string | null; target_column_id: string | null; note_x: number | null; note_y: number | null; workspace_id: string };
+  const legacy = connection.prepare("SELECT c.*, b.workspace_id FROM columns c JOIN boards b ON b.id=c.board_id WHERE b.kind='sticky' ORDER BY c.position").all() as Legacy[];
+  if (!legacy.length) return;
+  const now = Date.now();
+  const nextNumber = connection.prepare('SELECT coalesce(max(card_number),0)+1 n FROM cards WHERE workspace_id=?');
+  const insertCard = connection.prepare('INSERT INTO cards (id,workspace_id,card_number,title,description,created_at,updated_at,is_note,note_color,note_x,note_y,note_locked,note_board_id) VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?)');
+  const insertPlacement = connection.prepare('INSERT OR IGNORE INTO placements (id,card_id,board_id,column_id,position) VALUES (?,?,?,?,?)');
+  const targetOf = (note: Legacy) => {
+    const column = note.target_column_id ? connection.prepare('SELECT id,board_id FROM columns WHERE id=?').get(note.target_column_id) as { id: string; board_id: string } | undefined : undefined;
+    return column ? { boardId: column.board_id, columnId: column.id } : { boardId: note.target_board_id, columnId: null as string | null };
+  };
+  legacy.forEach((note, index) => {
+    const target = targetOf(note);
+    const x = note.note_x ?? 30 + (index % 3) * 360, y = note.note_y ?? 30 + Math.floor(index / 3) * 360;
+    const id = randomUUID();
+    insertCard.run(id, note.workspace_id, (nextNumber.get(note.workspace_id) as { n: number }).n, note.name, note.note_body, now, now, note.color, x, y, note.note_locked, target.boardId);
+    if (target.columnId) insertPlacement.run(randomUUID(), id, target.boardId, target.columnId, 0);
+    const inside = connection.prepare('SELECT p.* FROM placements p WHERE p.column_id=?').all(note.id) as { id: string; card_id: string; position: number }[];
+    inside.forEach((placement, offset) => {
+      const others = (connection.prepare('SELECT count(*) n FROM placements WHERE card_id=? AND id!=?').get(placement.card_id, placement.id) as { n: number }).n;
+      if (!others) {
+        connection.prepare('UPDATE cards SET is_note=1,note_color=?,note_x=?,note_y=?,note_board_id=? WHERE id=?').run(note.color, x + 30 * (offset + 1), y + 30 * (offset + 1), target.boardId, placement.card_id);
+        if (target.columnId) insertPlacement.run(randomUUID(), placement.card_id, target.boardId, target.columnId, placement.position);
+      }
+      connection.prepare('DELETE FROM tray WHERE placement_id=?').run(placement.id);
+    });
+    connection.prepare('DELETE FROM columns WHERE id=?').run(note.id);
+  });
 }
 
 function retryBusy<T>(operation: () => T): T {

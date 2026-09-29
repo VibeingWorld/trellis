@@ -131,3 +131,16 @@
 .sticky-pin:hover:not(:disabled) .sticky-pin-head{transform:scale(1.15)}.sticky-pin:focus-visible{outline:2px solid #3b6548;outline-offset:2px}.sticky-pin:disabled{cursor:default}
 .sticky-colors{margin:13px 0;padding:0;border:0}.sticky-colors legend{margin-bottom:8px;color:#66735d;font-size:11px;font-weight:700}.sticky-color-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.sticky-color-option{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid #dedfd4;border-radius:7px;background:#fff;color:#52624f;font-size:11px;text-align:left}.sticky-color-option span{width:19px;height:19px;flex-shrink:0;border:1px solid #00000015;border-radius:50%}.sticky-color-option.is-selected{border-color:#557d59;box-shadow:0 0 0 1px #557d59}.sticky-color-option:hover{background:#f8faf5}
 @media(max-width:700px){.sticky-stage{margin:0}}
+
+/* Notes are cards: whole-note dragging, no title bar. */
+.sticky-stage .sticky-note{height:250px;min-height:250px;padding:30px 20px 16px;cursor:default;touch-action:none;user-select:none}
+.sticky-stage .sticky-note.is-draggable:not(.is-pinned){cursor:grab}.sticky-stage .sticky-note.is-dragging{cursor:grabbing}
+.sticky-note-text{flex:1;min-height:0;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.55;color:#34483a;-webkit-mask-image:linear-gradient(#000 82%,transparent);mask-image:linear-gradient(#000 82%,transparent)}
+.sticky-note-text strong{display:block;margin-bottom:6px;font:750 17px/1.3 var(--font-heading)}
+.sticky-note-home{margin-top:8px;color:#606650;font-size:10px;opacity:.85}
+.sticky-stage.sticky-drop{outline:3px dashed #f5e2b4;outline-offset:-10px}
+.sticky-note:focus-visible{outline:2px solid #3b6548;outline-offset:3px}
+.notes-column .column-header{cursor:default}.status-note{background:#e6c96a}
+.board-card.note-card{border-color:#0000001a}.note-card-body{margin:0;padding:2px 2px 4px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5;color:#3d4a3c}
+.card-description.body-only{font-size:13px;color:#3d4a3c}
+.sticky-editor .modal-actions .sticky-unnote{margin-right:0}

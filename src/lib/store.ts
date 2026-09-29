@@ -27,6 +27,31 @@ function capacity(column: Row, exclude?: string) {
 function safeUrl(value: unknown) {const result = str(value,'URL',2000);try{const u=new URL(result);if(!['https:','http:'].includes(u.protocol))throw new Error();return u.href;}catch{throw new AppError('Use a valid http or https link.');}}
 function safeBackground(value: unknown) {const v=str(value,'Background',2000);if(/^#[\da-f]{3,8}$/i.test(v)||/^(linear|radial)-gradient\([#\w\s.,%()+-]+\)$/.test(v)||/^\/api\/uploads\/[\w-]+$/.test(v))return v;throw new AppError('Choose a color, gradient, or uploaded image.');}
 function noteColor(value: unknown) {const color=NOTE_COLORS.find(item=>item.value===value);if(!color)throw new AppError('Choose a sticky note color.');return color.value;}
+function cardTitle(value: unknown, body: string) {
+  if (value === undefined || value === null) value = '';
+  if (typeof value !== 'string' || value.length > 300) throw new AppError('Card title is too long.');
+  const title = value.trim();
+  if (!title && !body.trim()) throw new AppError('Add a title or a body.');
+  return title;
+}
+function noteCoordinate(value: unknown) {if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 5000) throw new AppError('Choose a valid note position.');return value;}
+function noteHome(card: Row, data: Row, f: Row) {
+  if (data.noteBoardId === undefined && data.columnId === undefined) return;
+  if (!data.noteBoardId) {if (data.columnId) throw new AppError('Choose a board for this column.');f.note_board_id = null;return;}
+  const board = row('boards', data.noteBoardId);
+  if (board.kind !== 'kanban' || board.archived || board.workspace_id !== card.workspace_id) throw new AppError('Choose an active board in this workspace.');
+  f.note_board_id = board.id;
+  const existing = sqlite.prepare('SELECT * FROM placements WHERE card_id=? AND board_id=?').get(card.id, board.id) as Row | undefined;
+  if (data.columnId) {
+    const column = row('columns', data.columnId);
+    if (column.board_id !== board.id) throw new AppError('Choose a column on this board.');
+    if (!existing) {capacity(column);sqlite.prepare('INSERT INTO placements (id,card_id,board_id,column_id,position) VALUES (?,?,?,?,?)').run(uid(), card.id, board.id, column.id, nextPosition(column.id));}
+    else if (existing.column_id !== column.id) relocate(existing, column, {});
+  } else if (data.columnId !== undefined && existing) {
+    sqlite.prepare('DELETE FROM tray WHERE placement_id=?').run(existing.id);
+    sqlite.prepare('DELETE FROM placements WHERE id=?').run(existing.id);
+  }
+}
 function patch(table: string, id: string, fields: Row) {const entries=Object.entries(fields);if(!entries.length)return;sqlite.prepare(`UPDATE ${table} SET ${entries.map(([k])=>`${k}=?`).join(',')} WHERE id=?`).run(...entries.map(([,v])=>v),id);}
 function setBoardAccess(board:Row,visibilityValue:unknown,memberValue:unknown){
   const visibility=String(visibilityValue);
@@ -48,7 +73,9 @@ export function getState(user?:SessionUser): AppState {
   const boards=db.select().from(s.boards).all().filter(item=>workspaceIds.has(item.workspaceId)&&(!user||((!item.archived||canWriteBoard(user,{id:item.id,kind:item.kind,workspace_id:item.workspaceId,owner_user_id:item.ownerUserId}))&&canReadBoard(user,{id:item.id,visibility:item.visibility,owner_user_id:item.ownerUserId,kind:item.kind,workspace_id:item.workspaceId}))));
   const boardIds=new Set(boards.map(item=>item.id));
   const allPlacements=db.select().from(s.placements).all(),placements=allPlacements.filter(item=>boardIds.has(item.boardId));
-  const cardIds=new Set(placements.map(item=>item.cardId)),cards=db.select().from(s.cards).all().filter(item=>cardIds.has(item.id));
+  const placedIds=new Set(placements.map(item=>item.cardId));
+  const cards=db.select().from(s.cards).all().filter(item=>placedIds.has(item.id)||(item.isNote&&workspaceIds.has(item.workspaceId)&&(!user||user.role==='admin'||permissionsFor(user,item.workspaceId).includes('read'))));
+  const cardIds=new Set(cards.map(item=>item.id));
   const boardMembers=db.select().from(s.boardMembers).all().filter(item=>boardIds.has(item.boardId));
   const workspaceIntegrations=db.select().from(s.workspaceIntegrations).all().filter(item=>workspaceIds.has(item.workspaceId)).map(item=>({...item,githubConfigured:Boolean(item.githubOwner&&item.githubRepo&&process.env.GITHUB_TOKEN),codexConfigured:Boolean(item.codexProjectName&&item.aiTriggerColumnId)}));
   const githubLinks=db.select().from(s.githubLinks).all().filter(item=>cardIds.has(item.cardId));
@@ -81,6 +108,7 @@ function relocate(p: Row, column: Row, data: Row, link=false) {
   const targetPosition=position(data.position,nextPosition(column.id));
   if(link){const id=uid();sqlite.prepare('INSERT INTO placements (id,card_id,board_id,column_id,position) VALUES (?,?,?,?,?)').run(id,p.card_id,column.board_id,column.id,targetPosition);return {id,warning,undoId:saveUndo({kind:'link',placementId:id,expectedVersion:1})};}
   patch('placements',p.id,{board_id:column.board_id,column_id:column.id,position:targetPosition,version:p.version+1});
+  sqlite.prepare('UPDATE cards SET note_board_id=? WHERE id=? AND is_note=1').run(column.board_id,p.card_id);
   return {id:p.id,warning,undoId:saveUndo({kind:'move',placementId:p.id,previous:p,expectedVersion:p.version+1})};
 }
 function perform(data: Row,user?:SessionUser): Row {
@@ -98,31 +126,38 @@ function perform(data: Row,user?:SessionUser): Row {
     case 'createColumn': {const board=row('boards',data.boardId);if(board.kind!=='kanban'||board.archived)throw new AppError('Choose an active board.');const id=uid(),n=(sqlite.prepare('SELECT coalesce(max(position),-1)+1 n FROM columns WHERE board_id=?').get(data.boardId) as Row).n;sqlite.prepare('INSERT INTO columns (id,board_id,name,position,wip_limit,limit_mode,color) VALUES (?,?,?,?,?,?,?)').run(id,data.boardId,str(data.name),position(data.position,n),data.wipLimit===undefined?null:limit(data.wipLimit),data.limitMode===undefined?'off':mode(data.limitMode),data.color===undefined?'#a1a8b8':safeBackground(data.color));return{id};}
     case 'updateColumn': {const c=row('columns',data.id),f:Row={};if(data.name!==undefined)f.name=str(data.name);if(data.wipLimit!==undefined)f.wip_limit=limit(data.wipLimit);if(data.limitMode!==undefined)f.limit_mode=mode(data.limitMode);if(data.position!==undefined)f.position=position(data.position,c.position);if(data.color!==undefined)f.color=safeBackground(data.color);patch('columns',c.id,f);return{id:c.id};}
     case 'deleteColumn': {const c=row('columns',data.id),active=sqlite.prepare('SELECT p.* FROM placements p JOIN cards ca ON ca.id=p.card_id WHERE p.column_id=? AND ca.archived=0 ORDER BY p.position').all(c.id) as Row[];if(active.length){if(!data.targetColumnId)throw new AppError('Choose another column for these cards first.',409);const target=row('columns',data.targetColumnId);if(target.board_id!==c.board_id||target.id===c.id)throw new AppError('Choose another column on this board.');for(const p of active)relocate(p,target,{});}sqlite.prepare('DELETE FROM tray WHERE placement_id IN (SELECT id FROM placements WHERE column_id=?)').run(c.id);sqlite.prepare('UPDATE columns SET target_board_id=NULL,target_column_id=NULL WHERE target_column_id=?').run(c.id);sqlite.prepare('DELETE FROM columns WHERE id=?').run(c.id);return{};}
-    case 'createNote': {const b=row('boards',data.boardId);if(b.kind!=='sticky'||b.archived)throw new AppError('Choose an active sticky notes board.');const id=uid(),n=(sqlite.prepare('SELECT coalesce(max(position),-1)+1 n FROM columns WHERE board_id=?').get(b.id) as Row).n;sqlite.prepare('INSERT INTO columns (id,board_id,name,position,color,note_body) VALUES (?,?,?,?,?,?)').run(id,b.id,str(data.name,'Note title',100),n,data.color===undefined?NOTE_COLORS[Math.floor(n)%4].value:noteColor(data.color),data.noteBody===undefined?'':optionalText(data.noteBody));return{id};}
-    case 'updateNote': {
-      const c=row('columns',data.id),b=row('boards',c.board_id);
-      if(b.kind!=='sticky'||b.archived)throw new AppError('Choose an active sticky note.');
+    case 'createNote': {
+      const b=row('boards',data.boardId);if(b.kind!=='sticky'||b.archived)throw new AppError('Choose an active sticky notes board.');
+      const body=data.noteBody===undefined?'':optionalText(data.noteBody),title=cardTitle(data.title,body),id=uid();
+      const cardNumber=Number((sqlite.prepare('SELECT coalesce(max(card_number),0)+1 n FROM cards WHERE workspace_id=?').get(b.workspace_id) as Row).n),count=Number((sqlite.prepare('SELECT count(*) n FROM cards WHERE workspace_id=? AND is_note=1').get(b.workspace_id) as Row).n);
       const f:Row={};
-      if(data.name!==undefined)f.name=str(data.name,'Note title',100);
-      if(data.noteBody!==undefined)f.note_body=optionalText(data.noteBody);
-      if(data.color!==undefined)f.color=noteColor(data.color);
-      if(data.minimized!==undefined)f.minimized=data.minimized?1:0;
-      if(data.noteLocked!==undefined){if(typeof data.noteLocked!=='boolean')throw new AppError('Choose whether the note is pinned.');f.note_locked=data.noteLocked?1:0;}
-      if(data.position!==undefined)f.position=position(data.position,c.position);
-      if(data.noteX!==undefined||data.noteY!==undefined){
-        if(c.note_locked)throw new AppError('Unpin this note before moving it.',409);
-        for(const value of [data.noteX,data.noteY])if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>5000)throw new AppError('Choose a valid note position.');
-        f.note_x=data.noteX;f.note_y=data.noteY;
-      }
-      if(data.targetBoardId!==undefined||data.targetColumnId!==undefined){if(!data.targetBoardId){f.target_board_id=null;f.target_column_id=null;}else{const target=row('boards',data.targetBoardId),column=row('columns',data.targetColumnId);if(target.workspace_id!==b.workspace_id||target.kind!=='kanban'||target.archived||column.board_id!==target.id)throw new AppError('Choose an active board and column in this workspace.');f.target_board_id=target.id;f.target_column_id=column.id;}}
-      patch('columns',c.id,f);return{id:c.id};
+      sqlite.prepare('INSERT INTO cards (id,workspace_id,card_number,title,description,created_at,updated_at,is_note,note_color,note_x,note_y) VALUES (?,?,?,?,?,?,?,1,?,?,?)').run(id,b.workspace_id,cardNumber,title,body,now,now,data.color===undefined?NOTE_COLORS[count%NOTE_COLORS.length].value:noteColor(data.color),data.noteX===undefined?null:noteCoordinate(data.noteX),data.noteY===undefined?null:noteCoordinate(data.noteY));
+      noteHome(row('cards',id),data,f);patch('cards',id,f);return{id};
     }
-    case 'deleteNote': {const c=row('columns',data.id),b=row('boards',c.board_id);if(b.kind!=='sticky')throw new AppError('Choose a sticky note.');const cards=sqlite.prepare('SELECT p.* FROM placements p JOIN cards ca ON ca.id=p.card_id WHERE p.column_id=? AND ca.archived=0').all(c.id) as Row[];if(cards.length)throw new AppError('Move the cards out of this note before deleting it.',409);sqlite.prepare('DELETE FROM tray WHERE placement_id IN (SELECT id FROM placements WHERE column_id=?)').run(c.id);sqlite.prepare('DELETE FROM columns WHERE id=?').run(c.id);return{};}
-    case 'sendNoteCards': {const c=row('columns',data.id),b=row('boards',c.board_id);if(b.kind!=='sticky'||!c.target_column_id)throw new AppError('Assign this note a board and column first.');const target=row('columns',c.target_column_id),targetBoard=row('boards',target.board_id);if(targetBoard.archived||targetBoard.workspace_id!==b.workspace_id||targetBoard.kind!=='kanban')throw new AppError('Choose an active destination board.');const items=sqlite.prepare('SELECT p.* FROM placements p JOIN cards ca ON ca.id=p.card_id WHERE p.column_id=? AND ca.archived=0').all(c.id) as Row[];let sent=0;for(const item of items){if(sqlite.prepare('SELECT 1 FROM placements WHERE card_id=? AND board_id=?').get(item.card_id,targetBoard.id))continue;relocate(item,target,{},true);sent++;}return{sent};}
-    case 'createCard': {const c=row('columns',data.columnId),b=row('boards',c.board_id),warning=capacity(c),id=uid(),placementId=uid(),cardNumber=Number((sqlite.prepare('SELECT coalesce(max(card_number),0)+1 n FROM cards WHERE workspace_id=?').get(b.workspace_id) as Row).n);sqlite.prepare('INSERT INTO cards (id,workspace_id,card_number,title,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(id,b.workspace_id,cardNumber,str(data.title,'Card title'),data.description===undefined?'':optionalText(data.description),now,now);sqlite.prepare('INSERT INTO placements (id,card_id,board_id,column_id,position) VALUES (?,?,?,?,?)').run(placementId,id,b.id,c.id,position(data.position,nextPosition(c.id)));return{id,placementId,cardNumber,warning};}
-    case 'updateCard': {const c=row('cards',data.id),f:Row={version:c.version+1,updated_at:now};if(data.version!==undefined && data.version!==c.version)throw new AppError('This card changed. Reload it before saving your changes.',409);if(data.title!==undefined)f.title=str(data.title,'Card title');if(data.description!==undefined)f.description=optionalText(data.description);if(data.cover!==undefined)f.cover=data.cover===null?null:safeBackground(data.cover);if(data.dueDate!==undefined){if(data.dueDate!==null && !/^\d{4}-\d{2}-\d{2}$/.test(data.dueDate))throw new AppError('Choose a valid due date.');f.due_date=data.dueDate;}if(data.scheduledStart!==undefined){if(data.scheduledStart!==null && (typeof data.scheduledStart!=='string'||!Number.isFinite(Date.parse(data.scheduledStart))))throw new AppError('Choose a valid start time.');f.scheduled_start=data.scheduledStart;}if(data.scheduledEnd!==undefined){if(data.scheduledEnd!==null && (typeof data.scheduledEnd!=='string'||!Number.isFinite(Date.parse(data.scheduledEnd))))throw new AppError('Choose a valid end time.');f.scheduled_end=data.scheduledEnd;}const nextStart=f.scheduled_start===undefined?c.scheduled_start:f.scheduled_start,nextEnd=f.scheduled_end===undefined?c.scheduled_end:f.scheduled_end;if(nextStart&&nextEnd&&Date.parse(nextEnd)<=Date.parse(nextStart))throw new AppError('End time must be after start time.');if(f.scheduled_start)f.due_date=String(f.scheduled_start).slice(0,10);if(data.dueDate===null&&data.scheduledStart===undefined){f.scheduled_start=null;f.scheduled_end=null;}if(data.archived!==undefined){f.archived=data.archived?1:0;if(c.archived&&!f.archived){const appearances=sqlite.prepare('SELECT * FROM placements WHERE card_id=?').all(c.id) as Row[];for(const p of appearances)capacity(row('columns',p.column_id),p.id);}}patch('cards',c.id,f);return{id:c.id};}
+    case 'updateNote': {
+      const c=activeCard(data.id);if(!c.is_note)throw new AppError('Choose a sticky note.');
+      const f:Row={version:c.version+1,updated_at:now};
+      if(data.title!==undefined||data.noteBody!==undefined){const body=data.noteBody===undefined?c.description:optionalText(data.noteBody);f.title=cardTitle(data.title===undefined?c.title:data.title,body);f.description=body;}
+      if(data.color!==undefined)f.note_color=noteColor(data.color);
+      if(data.noteLocked!==undefined){if(typeof data.noteLocked!=='boolean')throw new AppError('Choose whether the note is pinned.');f.note_locked=data.noteLocked?1:0;}
+      if(data.noteX!==undefined||data.noteY!==undefined){if(c.note_locked)throw new AppError('Unpin this note before moving it.',409);f.note_x=noteCoordinate(data.noteX);f.note_y=noteCoordinate(data.noteY);}
+      noteHome(c,data,f);
+      patch('cards',c.id,f);return{id:c.id};
+    }
+    case 'makeNote': {
+      const c=activeCard(data.cardId),f:Row={};
+      if(!c.is_note){const first=sqlite.prepare('SELECT board_id FROM placements WHERE card_id=? ORDER BY position LIMIT 1').get(c.id) as Row|undefined,count=Number((sqlite.prepare('SELECT count(*) n FROM cards WHERE workspace_id=? AND is_note=1').get(c.workspace_id) as Row).n);f.is_note=1;f.note_color=NOTE_COLORS[count%NOTE_COLORS.length].value;f.note_board_id=first?.board_id||null;}
+      else if(c.note_locked&&(data.noteX!==undefined||data.noteY!==undefined))throw new AppError('Unpin this note before moving it.',409);
+      if(data.noteX!==undefined||data.noteY!==undefined){f.note_x=noteCoordinate(data.noteX);f.note_y=noteCoordinate(data.noteY);}
+      if(data.trayId)sqlite.prepare('DELETE FROM tray WHERE id=?').run(str(data.trayId));
+      patch('cards',c.id,{...f,version:c.version+1,updated_at:now});return{id:c.id};
+    }
+    case 'unNote': {const c=activeCard(data.id);if(!c.is_note)throw new AppError('Choose a sticky note.');if(!(sqlite.prepare('SELECT 1 FROM placements WHERE card_id=?').get(c.id)))throw new AppError('Add this note to a column first, or delete it.',409);patch('cards',c.id,{is_note:0,version:c.version+1,updated_at:now});return{};}
+    case 'deleteNote': {const c=activeCard(data.id);if(!c.is_note)throw new AppError('Choose a sticky note.');patch('cards',c.id,{archived:1,version:c.version+1,updated_at:now});return{};}
+    case 'createCard': {const c=row('columns',data.columnId),b=row('boards',c.board_id),warning=capacity(c),id=uid(),placementId=uid(),cardNumber=Number((sqlite.prepare('SELECT coalesce(max(card_number),0)+1 n FROM cards WHERE workspace_id=?').get(b.workspace_id) as Row).n);sqlite.prepare('INSERT INTO cards (id,workspace_id,card_number,title,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(id,b.workspace_id,cardNumber,cardTitle(data.title,data.description===undefined?'':optionalText(data.description)),data.description===undefined?'':optionalText(data.description),now,now);sqlite.prepare('INSERT INTO placements (id,card_id,board_id,column_id,position) VALUES (?,?,?,?,?)').run(placementId,id,b.id,c.id,position(data.position,nextPosition(c.id)));return{id,placementId,cardNumber,warning};}
+    case 'updateCard': {const c=row('cards',data.id),f:Row={version:c.version+1,updated_at:now};if(data.version!==undefined && data.version!==c.version)throw new AppError('This card changed. Reload it before saving your changes.',409);if(data.title!==undefined||data.description!==undefined){const body=data.description===undefined?c.description:optionalText(data.description);f.title=cardTitle(data.title===undefined?c.title:data.title,body);f.description=body;}if(data.cover!==undefined)f.cover=data.cover===null?null:safeBackground(data.cover);if(data.dueDate!==undefined){if(data.dueDate!==null && !/^\d{4}-\d{2}-\d{2}$/.test(data.dueDate))throw new AppError('Choose a valid due date.');f.due_date=data.dueDate;}if(data.scheduledStart!==undefined){if(data.scheduledStart!==null && (typeof data.scheduledStart!=='string'||!Number.isFinite(Date.parse(data.scheduledStart))))throw new AppError('Choose a valid start time.');f.scheduled_start=data.scheduledStart;}if(data.scheduledEnd!==undefined){if(data.scheduledEnd!==null && (typeof data.scheduledEnd!=='string'||!Number.isFinite(Date.parse(data.scheduledEnd))))throw new AppError('Choose a valid end time.');f.scheduled_end=data.scheduledEnd;}const nextStart=f.scheduled_start===undefined?c.scheduled_start:f.scheduled_start,nextEnd=f.scheduled_end===undefined?c.scheduled_end:f.scheduled_end;if(nextStart&&nextEnd&&Date.parse(nextEnd)<=Date.parse(nextStart))throw new AppError('End time must be after start time.');if(f.scheduled_start)f.due_date=String(f.scheduled_start).slice(0,10);if(data.dueDate===null&&data.scheduledStart===undefined){f.scheduled_start=null;f.scheduled_end=null;}if(data.archived!==undefined){f.archived=data.archived?1:0;if(c.archived&&!f.archived){const appearances=sqlite.prepare('SELECT * FROM placements WHERE card_id=?').all(c.id) as Row[];for(const p of appearances)capacity(row('columns',p.column_id),p.id);}}patch('cards',c.id,f);return{id:c.id};}
     case 'deleteCard': {const c=row('cards',data.id);patch('cards',c.id,{archived:1,version:c.version+1,updated_at:now});return{};}
-    case 'removePlacement': {const p=row('placements',data.id),count=(sqlite.prepare('SELECT count(*) n FROM placements WHERE card_id=?').get(p.card_id) as Row).n;if(count===1&&!data.archiveIfLast)throw new AppError('This is the card’s last board. Archive the card everywhere instead.',409);if(count===1)patch('cards',p.card_id,{archived:1,updated_at:now});sqlite.prepare('DELETE FROM placements WHERE id=?').run(p.id);sqlite.prepare('DELETE FROM tray WHERE placement_id=?').run(p.id);return{};}
+    case 'removePlacement': {const p=row('placements',data.id),count=(sqlite.prepare('SELECT count(*) n FROM placements WHERE card_id=?').get(p.card_id) as Row).n,isNote=Boolean(row('cards',p.card_id).is_note);if(count===1&&!isNote&&!data.archiveIfLast)throw new AppError('This is the card’s last board. Archive the card everywhere instead.',409);if(count===1&&!isNote)patch('cards',p.card_id,{archived:1,updated_at:now});sqlite.prepare('DELETE FROM placements WHERE id=?').run(p.id);sqlite.prepare('DELETE FROM tray WHERE placement_id=?').run(p.id);return{};}
     case 'movePlacement': return relocate(row('placements',data.placementId),row('columns',data.columnId),data);
     case 'linkPlacement': return relocate(row('placements',data.placementId),row('columns',data.columnId),data,true);
     case 'addToTray': {const p=row('placements',data.placementId),c=activeCard(p.card_id),m=trayMode(data.mode||'move'),existing=sqlite.prepare('SELECT id FROM tray WHERE placement_id=?').get(p.id) as Row|undefined;if(existing){patch('tray',existing.id,{mode:m,source_version:p.version});return{id:existing.id};}const id=uid();sqlite.prepare('INSERT INTO tray VALUES (?,?,?,?,?,?)').run(id,c.workspace_id,p.id,m,p.version,now);return{id};}
@@ -148,7 +183,9 @@ function workspaceForAction(data:Row):string {
   if(['updateWorkspace'].includes(action))return row('workspaces',data.id).id;
   if(['updateBoard','updateBoardAccess','archiveBoard','restoreBoard','deleteBoard','moveBoardWorkspace'].includes(action))return row('boards',data.id).workspace_id;
   if(['createColumn','createNote'].includes(action))return row('boards',data.boardId).workspace_id;
-  if(['updateColumn','deleteColumn','updateNote','deleteNote','sendNoteCards'].includes(action))return row('boards',row('columns',data.id).board_id).workspace_id;
+  if(['updateNote','deleteNote','unNote'].includes(action))return row('cards',data.id).workspace_id;
+  if(action==='makeNote')return row('cards',data.cardId).workspace_id;
+  if(['updateColumn','deleteColumn'].includes(action))return row('boards',row('columns',data.id).board_id).workspace_id;
   if(action==='createCard')return row('boards',row('columns',data.columnId).board_id).workspace_id;
   if(['updateCard','deleteCard'].includes(action))return row('cards',data.id).workspace_id;
   if(['movePlacement','linkPlacement','addToTray'].includes(action))return row('cards',row('placements',data.placementId).card_id).workspace_id;
@@ -166,8 +203,8 @@ function boardIdsForAction(data:Row):string[]{
   const action=String(data.action||'');
   if(['updateBoard','updateBoardAccess','archiveBoard','restoreBoard','deleteBoard','moveBoardWorkspace'].includes(action))return[row('boards',data.id).id];
   if(['createColumn','createNote'].includes(action))return[row('boards',data.boardId).id];
-  if(['updateColumn','deleteColumn','updateNote','deleteNote'].includes(action))return[row('columns',data.id).board_id];
-  if(action==='sendNoteCards'){const note=row('columns',data.id);return[note.board_id,...(note.target_column_id?[row('columns',note.target_column_id).board_id]:[])];}
+  if(['updateColumn','deleteColumn'].includes(action))return[row('columns',data.id).board_id];
+  if(['updateNote','deleteNote','unNote','makeNote'].includes(action))return(sqlite.prepare("SELECT id FROM boards WHERE workspace_id=? AND kind='sticky' AND archived=0").all(row('cards',data.id||data.cardId).workspace_id) as {id:string}[]).map(item=>item.id);
   if(action==='createCard')return[row('columns',data.columnId).board_id];
   if(['updateCard','deleteCard','toggleTag','addLink','addRelation'].includes(action))return(sqlite.prepare('SELECT board_id FROM placements WHERE card_id=?').all(data.id||data.cardId) as {board_id:string}[]).map(item=>item.board_id);
   if(['movePlacement','linkPlacement'].includes(action))return[ row('placements',data.placementId).board_id,row('columns',data.columnId).board_id ];
@@ -188,12 +225,14 @@ function authorizeMutation(data:Row,user?:SessionUser){
   const workspaceId=workspaceForAction(data);
   const boardIds=[...new Set(boardIdsForAction(data))];
   if(boardIds.length&&!boardIds.some(boardId=>canWriteBoard(user,row('boards',boardId))))throw new AppError('You do not have access to this board.',403);
-  if(['movePlacement','linkPlacement','dropTray','sendNoteCards'].includes(action))boardIds.forEach(boardId=>requireBoardWrite(user,boardId));
+  if(typeof data.noteBoardId==='string'&&data.noteBoardId)requireBoardWrite(user,data.noteBoardId);
+  if(['movePlacement','linkPlacement','dropTray'].includes(action))boardIds.forEach(boardId=>requireBoardWrite(user,boardId));
   if(action==='updateBoardAccess'||(action==='updateBoard'&&data.visibility!==undefined)){const board=row('boards',data.id);if(user.role!=='admin'&&board.owner_user_id!==user.id)throw new AppError('Only the board owner or an admin can change access.',403);}
   const permission:Permission = ['createBoard'].includes(action)?'createBoard':
-    ['createColumn','updateColumn','deleteColumn','createNote','updateNote','deleteNote'].includes(action)?'createColumn':
-    ['createCard'].includes(action)?'createCard':
-    ['movePlacement','linkPlacement','addToTray','updateTray','removeFromTray','dropTray','removePlacement','undo','sendNoteCards'].includes(action)?'moveCard':
+    ['createColumn','updateColumn','deleteColumn'].includes(action)?'createColumn':
+    ['createCard','createNote'].includes(action)?'createCard':
+    ['updateNote','deleteNote','unNote','makeNote'].includes(action)?'editCard':
+    ['movePlacement','linkPlacement','addToTray','updateTray','removeFromTray','dropTray','removePlacement','undo'].includes(action)?'moveCard':
     ['updateWorkspace','updateBoard','updateBoardAccess','archiveBoard','restoreBoard','deleteBoard','moveBoardWorkspace'].includes(action)?'manageWorkspace':
     ['deleteAttachment'].includes(action)?'uploadFiles':'editCard';
   requirePermission(user,workspaceId,permission);

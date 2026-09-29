@@ -27,6 +27,8 @@ export const cards = sqliteTable('cards', {
   title: text('title').notNull(), description: text('description').notNull().default(''),
   cover: text('cover'), dueDate: text('due_date'), scheduledStart: text('scheduled_start'), scheduledEnd: text('scheduled_end'), archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   version: integer('version').notNull().default(1), createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
+  isNote: integer('is_note', { mode: 'boolean' }).notNull().default(false), noteColor: text('note_color'), noteX: real('note_x'), noteY: real('note_y'),
+  noteLocked: integer('note_locked', { mode: 'boolean' }).notNull().default(false), noteBoardId: text('note_board_id'),
 });
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(), email: text('email').notNull().unique(), name: text('name').notNull(),

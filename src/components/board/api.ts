@@ -2,8 +2,8 @@ import { appPath } from "@/lib/app-path";
 
 export type Workspace = { id: string; name: string; description?: string };
 export type Board = { id: string; workspaceId: string; name: string; description?: string; background: string; visibility:"private"|"members"|"public"; ownerUserId?:string|null; kind:"kanban"|"sticky"; archived:boolean };
-export type Column = { id: string; boardId: string; name: string; position: number; color:string; wipLimit: number | null; limitMode: "off" | "warning" | "strict"; noteBody:string; minimized:boolean; noteLocked:boolean; targetBoardId:string|null; targetColumnId:string|null; noteX:number|null; noteY:number|null };
-export type Card = { id: string; workspaceId: string; cardNumber: number; title: string; description: string; cover?: string | null; dueDate?: string | null; scheduledStart?: string | null; scheduledEnd?: string | null; version?: number; archived?: boolean };
+export type Column = { id: string; boardId: string; name: string; position: number; color:string; wipLimit: number | null; limitMode: "off" | "warning" | "strict" };
+export type Card = { id: string; workspaceId: string; cardNumber: number; title: string; description: string; cover?: string | null; dueDate?: string | null; scheduledStart?: string | null; scheduledEnd?: string | null; version?: number; archived?: boolean; isNote?: boolean; noteColor?: string | null; noteX?: number | null; noteY?: number | null; noteLocked?: boolean; noteBoardId?: string | null };
 export type Placement = { id: string; cardId: string; boardId: string; columnId: string; position: number; version?: number };
 export type Tag = { id: string; workspaceId: string; name: string; color: string };
 export type CardTag = { cardId: string; tagId: string };
