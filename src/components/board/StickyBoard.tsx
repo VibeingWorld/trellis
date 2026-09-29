@@ -8,7 +8,7 @@ import { PinboardCanvas, type Pin } from "./PinboardCanvas";
 import { NOTE_COLORS } from "@/lib/note-colors";
 
 type Props = {
-  board: Board; state: AppState; notes: Card[]; busy: boolean; canEdit: boolean; canManage: boolean; onSettings: () => void;
+  board: Board; state: AppState; notes: Card[]; allNotes: Card[]; filter: string; onFilter: (value: string) => void; busy: boolean; canEdit: boolean; canManage: boolean; onSettings: () => void;
   onMutate: (name: string, payload: Record<string, unknown>, message?: string) => Promise<ActionResult | false>;
 };
 type Point = { x: number; y: number };
@@ -19,7 +19,7 @@ const defaultPoint = (index: number, columns: number): Point => ({ x: 30 + (inde
 const clamp = (value: number, maximum: number) => Math.max(0, Math.min(maximum, value));
 const ZOOM_STEPS = [0.5, 0.65, 0.8, 1, 1.25, 1.5, 1.75, 2];
 
-export function StickyBoard({ board, state, notes, busy, canEdit, canManage, onSettings, onMutate }: Props) {
+export function StickyBoard({ board, state, notes, allNotes, filter, onFilter, busy, canEdit, canManage, onSettings, onMutate }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const pendingZoom = useRef<{ x: number; y: number; focusX: number; focusY: number } | null>(null);
@@ -148,6 +148,11 @@ export function StickyBoard({ board, state, notes, busy, canEdit, canManage, onS
         <button className="sticky-zoom-value" aria-label={`Reset zoom to 100% (currently ${Math.round(zoom * 100)}%)`} title="Reset zoom to 100%" onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button>
         <button aria-label="Zoom in" title="Zoom in" disabled={zoom >= 2} onClick={() => changeZoom(zoomIn)}>+</button>
       </div>
+      <select className="tag-filter sticky-filter" aria-label="Filter notes by board" value={filter} onChange={event => onFilter(event.target.value)}>
+        <option value="">All notes ({allNotes.length})</option>
+        <option value="none">No board ({allNotes.filter(item => !item.noteBoardId).length})</option>
+        {state.boards.filter(item => item.workspaceId === board.workspaceId && item.kind === "kanban" && !item.archived).map(item => <option key={item.id} value={item.id}>{item.name} ({allNotes.filter(note => note.noteBoardId === item.id).length})</option>)}
+      </select>
       <div className="sticky-toolbar-actions">{canManage && <button className="button secondary" onClick={onSettings}><Icon name="more" size={16} />Board settings</button>}{canEdit && <button className="button primary" onClick={() => setEditing("new")}><Icon name="plus" size={16} />New note</button>}</div>
     </div>
     <div className="sticky-viewport" ref={viewport}>
@@ -168,7 +173,7 @@ export function StickyBoard({ board, state, notes, busy, canEdit, canManage, onS
               {home && <small className="sticky-note-home">{home}</small>}
             </article>;
           })}
-          {canEdit && notes.length === 0 && <button className="sticky-add" style={{ left: 30, top: 30 }} onClick={() => setEditing("new")}><Icon name="plus" size={22} />Add a note, or drop a card from the tray</button>}
+          {canEdit && notes.length === 0 && <button className="sticky-add" style={{ left: 30, top: 30 }} onClick={() => setEditing("new")}><Icon name="plus" size={22} />{allNotes.length ? "No notes match this filter" : "Add a note, or drop a card from the tray"}</button>}
           {notes.length === 0 && !canEdit && <div className="sticky-empty">No notes yet.</div>}
         </div>
       </div>
