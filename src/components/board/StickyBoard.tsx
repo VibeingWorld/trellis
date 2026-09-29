@@ -29,6 +29,7 @@ export function StickyBoard({ board, state, notes, allNotes, filter, onFilter, b
   const [dropping, setDropping] = useState(false);
   const [draftPoints, setDraftPoints] = useState<Record<string, Point>>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [liftedId, setLiftedId] = useState<string | null>(null);
   const drag = useRef<ActiveDrag | null>(null);
   const suppressClick = useRef<{ id: string; until: number } | null>(null);
   useEffect(() => {
@@ -89,6 +90,7 @@ export function StickyBoard({ board, state, notes, allNotes, filter, onFilter, b
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { id: pin.id, pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, x: pin.x, y: pin.y, nextX: pin.x, nextY: pin.y };
     setDraggingId(pin.id);
+    setLiftedId(pin.id);
   }
 
   function moveDrag(event: PointerEvent<HTMLElement>) {
@@ -109,10 +111,11 @@ export function StickyBoard({ board, state, notes, allNotes, filter, onFilter, b
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (!cancelled && Math.hypot(current.nextX - current.x, current.nextY - current.y) > 3) {
       suppressClick.current = { id: current.id, until: performance.now() + 350 };
-      void onMutate("updateNote", { id: current.id, noteX: Math.round(current.nextX), noteY: Math.round(current.nextY) }).finally(() => {
+      void onMutate("updateNote", { id: current.id, noteX: Math.round(current.nextX), noteY: Math.round(current.nextY), bringToFront: true }).finally(() => {
         setDraftPoints(previous => { const next = { ...previous }; delete next[current.id]; return next; });
+        setLiftedId(null);
       });
-    } else setDraftPoints(previous => { const next = { ...previous }; delete next[current.id]; return next; });
+    } else { setLiftedId(null); setDraftPoints(previous => { const next = { ...previous }; delete next[current.id]; return next; }); }
   }
 
   const isCardDrag = (event: DragEvent) => event.dataTransfer.types.includes("application/cove-card") || event.dataTransfer.types.includes("text/plain");
@@ -167,7 +170,7 @@ export function StickyBoard({ board, state, notes, allNotes, filter, onFilter, b
             const home = destination ? column ? `${destination.name} / ${column.name}` : `${destination.name} / Notes` : "";
             const locked = !!note.noteLocked;
             const label = note.title || note.description.slice(0, 40) || "note";
-            return <article key={note.id} tabIndex={0} role="button" aria-label={`${locked ? "Edit" : "Drag to move or click to edit"} ${label}`} className={`sticky-note ${locked ? "is-pinned" : ""} ${draggingId === note.id ? "is-dragging" : ""} ${canEdit ? "is-draggable" : ""}`} style={{ background: note.noteColor || NOTE_COLORS[0].value, left: pin.x, top: pin.y }} onPointerDown={event => startDrag(event, pin, locked)} onPointerMove={moveDrag} onPointerUp={event => finishDrag(event)} onPointerCancel={event => finishDrag(event, true)} onKeyDown={event => noteKey(event, note)} onClick={event => { if ((event.target as HTMLElement).closest("button")) return; const suppressed = suppressClick.current?.id === note.id && performance.now() < suppressClick.current.until; suppressClick.current = null; if (!suppressed && canEdit) setEditing(note); }}>
+            return <article key={note.id} tabIndex={0} role="button" aria-label={`${locked ? "Edit" : "Drag to move or click to edit"} ${label}`} className={`sticky-note ${locked ? "is-pinned" : ""} ${draggingId === note.id ? "is-dragging" : ""} ${canEdit ? "is-draggable" : ""}`} style={{ background: note.noteColor || NOTE_COLORS[0].value, left: pin.x, top: pin.y, zIndex: liftedId === note.id ? 100000 : 1 + (note.noteZ ?? 0) }} onPointerDown={event => startDrag(event, pin, locked)} onPointerMove={moveDrag} onPointerUp={event => finishDrag(event)} onPointerCancel={event => finishDrag(event, true)} onKeyDown={event => noteKey(event, note)} onClick={event => { if ((event.target as HTMLElement).closest("button")) return; const suppressed = suppressClick.current?.id === note.id && performance.now() < suppressClick.current.until; suppressClick.current = null; if (!suppressed && canEdit) setEditing(note); }}>
               <button className={`sticky-pin ${locked ? "is-locked" : ""}`} aria-label={locked ? "Unpin note" : "Pin note in place"} aria-pressed={locked} title={locked ? "Unpin to move this note" : "Pin this note in place"} disabled={!canEdit || busy} onClick={() => void onMutate("updateNote", { id: note.id, noteLocked: !locked })}><span className="sticky-pin-head" /></button>
               <div className="sticky-note-text">{note.title && <strong>{note.title}</strong>}{note.description}</div>
               {home && <small className="sticky-note-home">{home}</small>}

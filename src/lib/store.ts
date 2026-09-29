@@ -35,6 +35,7 @@ function cardTitle(value: unknown, body: string) {
   return title;
 }
 function noteCoordinate(value: unknown) {if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 5000) throw new AppError('Choose a valid note position.');return value;}
+function topNoteZ(workspaceId: unknown) {return Number((sqlite.prepare('SELECT coalesce(max(note_z),0)+1 n FROM cards WHERE workspace_id=? AND is_note=1').get(workspaceId) as Row).n);}
 function noteHome(card: Row, data: Row, f: Row) {
   if (data.noteBoardId === undefined && data.columnId === undefined) return;
   if (!data.noteBoardId) {if (data.columnId) throw new AppError('Choose a board for this column.');f.note_board_id = null;return;}
@@ -131,7 +132,7 @@ function perform(data: Row,user?:SessionUser): Row {
       const body=data.noteBody===undefined?'':optionalText(data.noteBody),title=cardTitle(data.title,body),id=uid();
       const cardNumber=Number((sqlite.prepare('SELECT coalesce(max(card_number),0)+1 n FROM cards WHERE workspace_id=?').get(b.workspace_id) as Row).n),count=Number((sqlite.prepare('SELECT count(*) n FROM cards WHERE workspace_id=? AND is_note=1').get(b.workspace_id) as Row).n);
       const f:Row={};
-      sqlite.prepare('INSERT INTO cards (id,workspace_id,card_number,title,description,created_at,updated_at,is_note,note_color,note_x,note_y) VALUES (?,?,?,?,?,?,?,1,?,?,?)').run(id,b.workspace_id,cardNumber,title,body,now,now,data.color===undefined?NOTE_COLORS[count%NOTE_COLORS.length].value:noteColor(data.color),data.noteX===undefined?null:noteCoordinate(data.noteX),data.noteY===undefined?null:noteCoordinate(data.noteY));
+      sqlite.prepare('INSERT INTO cards (id,workspace_id,card_number,title,description,created_at,updated_at,is_note,note_color,note_x,note_y,note_z) VALUES (?,?,?,?,?,?,?,1,?,?,?,?)').run(id,b.workspace_id,cardNumber,title,body,now,now,data.color===undefined?NOTE_COLORS[count%NOTE_COLORS.length].value:noteColor(data.color),data.noteX===undefined?null:noteCoordinate(data.noteX),data.noteY===undefined?null:noteCoordinate(data.noteY),topNoteZ(b.workspace_id));
       noteHome(row('cards',id),data,f);patch('cards',id,f);return{id};
     }
     case 'updateNote': {
@@ -141,6 +142,7 @@ function perform(data: Row,user?:SessionUser): Row {
       if(data.color!==undefined)f.note_color=noteColor(data.color);
       if(data.noteLocked!==undefined){if(typeof data.noteLocked!=='boolean')throw new AppError('Choose whether the note is pinned.');f.note_locked=data.noteLocked?1:0;}
       if(data.noteX!==undefined||data.noteY!==undefined){if(c.note_locked)throw new AppError('Unpin this note before moving it.',409);f.note_x=noteCoordinate(data.noteX);f.note_y=noteCoordinate(data.noteY);}
+      if(data.bringToFront)f.note_z=topNoteZ(c.workspace_id);
       noteHome(c,data,f);
       patch('cards',c.id,f);return{id:c.id};
     }
@@ -149,6 +151,7 @@ function perform(data: Row,user?:SessionUser): Row {
       if(!c.is_note){const first=sqlite.prepare('SELECT board_id FROM placements WHERE card_id=? ORDER BY position LIMIT 1').get(c.id) as Row|undefined,count=Number((sqlite.prepare('SELECT count(*) n FROM cards WHERE workspace_id=? AND is_note=1').get(c.workspace_id) as Row).n);f.is_note=1;f.note_color=NOTE_COLORS[count%NOTE_COLORS.length].value;f.note_board_id=first?.board_id||null;}
       else if(c.note_locked&&(data.noteX!==undefined||data.noteY!==undefined))throw new AppError('Unpin this note before moving it.',409);
       if(data.noteX!==undefined||data.noteY!==undefined){f.note_x=noteCoordinate(data.noteX);f.note_y=noteCoordinate(data.noteY);}
+      f.note_z=topNoteZ(c.workspace_id);
       if(data.trayId)sqlite.prepare('DELETE FROM tray WHERE id=?').run(str(data.trayId));
       patch('cards',c.id,{...f,version:c.version+1,updated_at:now});return{id:c.id};
     }
