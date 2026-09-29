@@ -3,10 +3,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from "react";
 import CardDetail from "@/components/card/CardDetail";
 import { appPath } from "@/lib/app-path";
-import { action, readState, signOut, type AppState, type AppUser, type Board, type Card, type Column, type Placement, type TrayItem } from "./api";
+import { action, readState, signOut, type AppState, type AppUser, type Board, type Column, type Placement, type TrayItem } from "./api";
 import { CalendarPanel } from "./CalendarPanel";
 import { Icon } from "./Icon";
-import { NoteEditor } from "./NoteEditor";
 import { StickyBoard } from "./StickyBoard";
 
 const backgrounds = [
@@ -56,7 +55,6 @@ export default function BoardApp() {
   const [activeTrayItem, setActiveTrayItem] = useState<string | null>(null);
   const [showArchivedBoards, setShowArchivedBoards] = useState(false);
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null);
-  const [noteEditor, setNoteEditor] = useState<Card | null>(null);
   const mutationLock = useRef(false);
   const refreshLock = useRef(false);
   const interactionLock = useRef(false);
@@ -170,8 +168,8 @@ export default function BoardApp() {
   const archivedBoards = state?.boards.filter((item) => item.workspaceId === activeWorkspaceId && item.archived) || [];
   const columns = useMemo(() => state?.columns.filter((item) => item.boardId === activeBoardId).sort((a, b) => a.position - b.position) || [], [state, activeBoardId]);
   const stickyNotes = useMemo(() => state?.cards.filter((item) => item.isNote && !item.archived && item.workspaceId === activeWorkspaceId) || [], [state, activeWorkspaceId]);
-  // Notes that belong to this board but sit in no column live in a read-only Notes column.
-  const looseNotes = useMemo(() => state?.cards.filter((item) => item.isNote && !item.archived && item.noteBoardId === activeBoardId && !state.placements.some((p) => p.cardId === item.id && p.boardId === activeBoardId)) || [], [state, activeBoardId]);
+  const boardNotes = useMemo(() => state?.cards.filter((item) => item.isNote && !item.archived && item.noteBoardId === activeBoardId) || [], [state, activeBoardId]);
+  const stickyBoard = workspaceBoards.find((item) => item.kind === "sticky");
   const tags = state?.tags.filter((item) => item.workspaceId === activeWorkspaceId) || [];
   const trayItems = state?.tray.filter((item) => {
     const placement = state.placements.find((p) => p.id === item.placementId);
@@ -304,12 +302,9 @@ export default function BoardApp() {
       <div className="board-and-tray">
         <section className={`board-surface ${board?.background === "midnight" || board?.background === "#253b42" ? "dark-board" : ""}`} style={boardStyle(board?.background)}>
           {board?.kind === "sticky" ? <StickyBoard board={board} state={state} notes={stickyNotes} busy={busy} canEdit={!!can("editCard")} canManage={!!can("manageWorkspace")} onSettings={()=>setDialog({kind:"boardSettings"})} onMutate={mutate} /> : board ? <>
-            <div className="board-header"><div><div className="board-eyebrow"><span className="board-tiny-dot" />A LITTLE ROOM FOR BIG IDEAS</div><div className="board-title-row"><h1>{board.name}</h1><span className="visibility-badge">{board.visibility === "public" ? "Public read" : board.visibility === "members" ? "Members" : "Private"}</span>{can("manageWorkspace")&&<button className="icon-button board-menu" aria-label="Board settings" onClick={() => setDialog({ kind: "boardSettings" })}><Icon name="more" /></button>}</div><p>{board.description || "Make a little progress. Move the good things forward."}</p></div>{can("manageWorkspace")&&<button className="button background-button" onClick={() => setDialog({ kind: "background" })}><Icon name="image" size={16} /><span>Background</span></button>}</div>
+            <div className="board-header"><div><div className="board-eyebrow"><span className="board-tiny-dot" />A LITTLE ROOM FOR BIG IDEAS</div><div className="board-title-row"><h1>{board.name}</h1><span className="visibility-badge">{board.visibility === "public" ? "Public read" : board.visibility === "members" ? "Members" : "Private"}</span>{can("manageWorkspace")&&<button className="icon-button board-menu" aria-label="Board settings" onClick={() => setDialog({ kind: "boardSettings" })}><Icon name="more" /></button>}</div>{boardNotes.length > 0 && stickyBoard && <a className="board-notes-link" href={`?board=${encodeURIComponent(stickyBoard.id)}`} onClick={(event) => { event.preventDefault(); navigateBoard(stickyBoard); }}>{boardNotes.length} {boardNotes.length === 1 ? "note" : "notes"}</a>}<p>{board.description || "Make a little progress. Move the good things forward."}</p></div>{can("manageWorkspace")&&<button className="button background-button" onClick={() => setDialog({ kind: "background" })}><Icon name="image" size={16} /><span>Background</span></button>}</div>
             <div className="board-toolbar"><div className="board-view-label"><Icon name="board" size={17} /><span>Board</span><span className="view-count">{totalCards}</span></div><div className="toolbar-actions"><div className="board-search"><Icon name="search" size={15} /><input aria-label="Search cards" placeholder="Search cards…" value={search} onChange={(event) => setSearch(event.target.value)} />{search && <button className="icon-button" aria-label="Clear search" onClick={() => setSearch("")}><Icon name="close" size={13} /></button>}</div><select className="tag-filter" aria-label="Filter by tag" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}><option value="">All tags</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>{can("createColumn")&&<button className="button add-column-top" onClick={() => setDialog({ kind: "column" })}><Icon name="plus" size={15} />Add column</button>}</div></div>
-            <div className="columns-scroller"><div className="columns-row">{looseNotes.length > 0 && <section className="kanban-column notes-column" aria-label="Notes">
-              <div className="column-header"><span className="column-status status-note" /><h2>Notes</h2><span className="column-count" title="Notes on this board that are not in a column">{looseNotes.length}</span></div>
-              <div className="column-cards">{looseNotes.filter((note) => `${note.title} ${note.description}`.toLowerCase().includes(search.toLowerCase())).map((note) => <article key={note.id} className="board-card note-card" style={{ background: note.noteColor || undefined }} draggable={can("editCard")} onDragStart={(event) => { const payload = JSON.stringify({ type: "note", id: note.id }); event.dataTransfer.setData("application/cove-card", payload); event.dataTransfer.setData("text/plain", payload); event.dataTransfer.effectAllowed = "move"; }}><button className="card-open" onClick={() => setNoteEditor(note)}>{note.title && <h3>{note.title}</h3>}<p className="note-card-body">{note.description.slice(0, 240)}</p></button></article>)}</div>
-            </section>}{columns.map((column, index) => {
+            <div className="columns-scroller"><div className="columns-row">{columns.map((column, index) => {
               const allPlacements = state.placements.filter((item) => item.columnId === column.id && !state.cards.find((card) => card.id === item.cardId)?.archived).sort((a, b) => a.position - b.position);
               const visiblePlacements = allPlacements.filter((item) => {
                 const card = state.cards.find((entry) => entry.id === item.cardId);
@@ -351,7 +346,6 @@ export default function BoardApp() {
     }} />}
     {dialog?.kind==="integrations"&&<IntegrationDialog state={state} workspaceId={activeWorkspaceId} busy={busy} onClose={()=>setDialog(null)} onSave={async(payload)=>!!(await mutate("saveWorkspaceIntegration",payload,"Integrations saved"))}/>}
     {dialog?.kind==="account"&&<AccountDialog state={state} busy={busy} onClose={()=>setDialog(null)} onSubmit={async(name,payload,message)=>!!(await mutate(name,payload,message))}/>}
-    {noteEditor && <NoteEditor key={noteEditor.id} note={noteEditor} workspaceId={activeWorkspaceId} state={state} busy={busy} onMutate={mutate} onClose={() => setNoteEditor(null)} />}
     {placement && <CardDetail key={placement.id} cardId={placement.cardId} placementId={placement.id} state={state} onClose={closeCard} onRefresh={refresh} onNavigateBoard={(boardId, cardId) => { const destination = state.boards.find((item) => item.id === boardId); const destinationPlacement = state.placements.find((item) => item.boardId === boardId && item.cardId === cardId); if (destination && destinationPlacement) { setActiveBoardId(destination.id); setActiveWorkspaceId(destination.workspaceId); setSelectedPlacement(destinationPlacement.id); localStorage.setItem("cove.board", destination.id); window.history.replaceState({}, "", `?board=${encodeURIComponent(destination.id)}&card=${encodeURIComponent(cardId || placement.cardId)}`); } }} />}
   </div>;
 }

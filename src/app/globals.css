@@ -144,3 +144,4 @@
 .board-card.note-card{border-color:#0000001a}.note-card-body{margin:0;padding:2px 2px 4px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5;color:#3d4a3c}
 .card-description.body-only{font-size:13px;color:#3d4a3c}
 .sticky-editor .modal-actions .sticky-unnote{margin-right:0}
+.board-notes-link{display:inline-block;margin:2px 0 4px;font-size:13px;font-weight:650;color:#4b7151;text-decoration:underline;text-underline-offset:3px}.board-notes-link:hover{color:#2f5237}
